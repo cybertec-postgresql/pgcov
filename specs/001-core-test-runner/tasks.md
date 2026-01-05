@@ -26,11 +26,11 @@ Single Go project: `internal/`, `cmd/`, `testdata/` at repository root
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Initialize Go module with go.mod at repository root
-- [ ] T002 Create project directory structure (cmd/pgcov/, internal/, pkg/types/, testdata/)
-- [ ] T003 Add dependencies: github.com/urfave/cli/v3, github.com/pganalyze/pg_query_go/v6, github.com/jackc/pgx/v5
-- [ ] T004 [P] Create .gitignore file (ignore .pgcov/, binaries, IDE files)
-- [ ] T005 [P] Create README.md with project overview and quick start
+- [X] T001 Initialize Go module with go.mod at repository root
+- [X] T002 Create project directory structure (cmd/pgcov/, internal/, pkg/types/, testdata/)
+- [X] T003 Add dependencies: github.com/urfave/cli/v3, github.com/pganalyze/pg_query_go/v6, github.com/jackc/pgx/v5
+- [X] T004 [P] Create .gitignore file (ignore .pgcov/, binaries, IDE files)
+- [X] T005 [P] Create README.md with project overview and quick start
 
 ---
 
@@ -40,16 +40,16 @@ Single Go project: `internal/`, `cmd/`, `testdata/` at repository root
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T006 Create Config struct in internal/cli/config.go (PostgreSQL connection, execution, output settings)
-- [ ] T007 Implement configuration loader in internal/cli/config.go (layered: flags → env vars → defaults)
-- [ ] T008 Create DiscoveredFile and FileType types in internal/discovery/types.go
-- [ ] T009 Create ParsedSQL and Statement types in internal/parser/types.go
-- [ ] T010 Create InstrumentedSQL and CoveragePoint types in internal/instrument/types.go
-- [ ] T011 Create Coverage, FileCoverage, LineCoverage, BranchCoverage types in internal/coverage/model.go
-- [ ] T012 Create TestRun, TestStatus, TempDatabase types in internal/runner/types.go
-- [ ] T013 Create custom error types (ParseError, ConnectionError, TestFailureError) in internal/errors/errors.go
-- [ ] T014 [P] Create CLI app skeleton in cmd/pgcov/main.go using urfave/cli/v3
-- [ ] T015 [P] Implement version and help commands in cmd/pgcov/main.go
+- [X] T006 Create Config struct in internal/cli/config.go (PostgreSQL connection, execution, output settings)
+- [X] T007 Implement configuration loader in internal/cli/config.go (layered: flags → env vars → defaults)
+- [X] T008 Create DiscoveredFile and FileType types in internal/discovery/types.go
+- [X] T009 Create ParsedSQL and Statement types in internal/parser/types.go
+- [X] T010 Create InstrumentedSQL and CoveragePoint types in internal/instrument/types.go
+- [X] T011 Create Coverage, FileCoverage, LineCoverage, BranchCoverage types in internal/coverage/model.go
+- [X] T012 Create TestRun, TestStatus, TempDatabase types in internal/runner/types.go
+- [X] T013 Create custom error types (ParseError, ConnectionError, TestFailureError) in internal/errors/errors.go
+- [X] T014 [P] Create CLI app skeleton in cmd/pgcov/main.go using urfave/cli/v3
+- [X] T015 [P] Implement version and help commands in cmd/pgcov/main.go
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 

@@ -1,0 +1,43 @@
+# pgcov artifacts
+.pgcov/
+*.pgcov
+
+# Binaries
+pgcov
+pgcov.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go build artifacts
+*.test
+*.out
+*.prof
+coverage.txt
+coverage.lcov
+
+# Go workspace
+/vendor/
+go.work
+go.work.sum
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Test databases (safety net - should be cleaned up)
+pgcov_test_*
