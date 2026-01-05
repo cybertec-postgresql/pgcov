@@ -11,7 +11,7 @@
 
 - Q: How should pgcov implement test isolation to prevent state leakage between tests? → A: Each test runs in a temporary database created/destroyed per test
 - Q: Where should pgcov store coverage data collected during test execution? → A: Store coverage data in a local file (JSON, LCOV, or other preferred format)
-- Q: Where should pgcov discover instrumentable source files for coverage tracking? → A: Search the same directory tree where test files are found (same root path provided to `pgcov run`)
+- Q: Where should pgcov discover instrumentable source files for coverage tracking? → A: Search the same directories as test files (instrumented SQL files must be in same directory as `*_test.sql` files)
 - Q: When and how should pgcov apply instrumentation to SQL source code? → A: Instrument source files in-memory before deploying to the temporary test database
 - Q: How should pgcov handle parallel test execution? → A: Support parallel execution via opt-in flag with configurable concurrency limit (e.g., `--parallel=N`)
 
@@ -97,7 +97,7 @@ A developer wants to export coverage reports in machine-readable formats (JSON, 
 ### Functional Requirements
 
 - **FR-001**: System MUST discover all files matching the `*_test.sql` pattern under a specified directory path (recursive search, similar to `go test ./...` or `go test ./foldername/`)
-- **FR-002**: System MUST parse non-test SQL files (`.sql` extension, not matching `*_test.sql`) found in the same directory tree as instrumentable source code using PostgreSQL-compatible parser
+- **FR-002**: System MUST parse non-test SQL files (`.sql` extension, not matching `*_test.sql`) found in the same directories as test files as instrumentable source code using PostgreSQL-compatible parser
 - **FR-003**: System MUST instrument SQL and PL/pgSQL source code in-memory by rewriting the Abstract Syntax Tree (AST) to insert execution tracking hooks before deploying to the temporary test database
 - **FR-004**: System MUST execute each discovered test file in a temporary database that is created before the test runs and destroyed after completion, ensuring complete isolation with no shared state between tests
 - **FR-021**: System MUST create temporary databases with unique names to enable parallel test execution without conflicts
