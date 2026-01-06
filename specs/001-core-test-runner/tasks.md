@@ -137,11 +137,11 @@ Single Go project: `internal/`, `cmd/`, `testdata/` at repository root
 
 ### Implementation for User Story 2
 
-- [ ] T051 [P] [US2] Implement unique database naming in internal/database/tempdb.go (timestamp + random suffix)
-- [ ] T052 [P] [US2] Implement isolation validator in internal/runner/isolation.go (verify no state leakage between tests)
-- [ ] T053 [US2] Add cleanup verification in internal/database/tempdb.go (ensure database is dropped after test)
+- [X] T051 [P] [US2] Implement unique database naming in internal/database/tempdb.go (timestamp + random suffix)
+- [X] T052 [P] [US2] Implement isolation validator in internal/runner/isolation.go (verify no state leakage between tests)
+- [X] T053 [US2] Add cleanup verification in internal/database/tempdb.go (ensure database is dropped after test)
 - [ ] T054 [US2] Create order-independence test in internal/integration_test.go (run tests A→B and B→A, verify identical results)
-- [ ] T055 [US2] Create isolation test fixtures in testdata/isolation/ (tests that modify state)
+- [X] T055 [US2] Create isolation test fixtures in testdata/isolation/ (tests that modify state)
 - [ ] T056 [US2] Verify test independence in integration tests (run same test twice, verify identical coverage)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
