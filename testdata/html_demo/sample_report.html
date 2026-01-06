@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coverage Report</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f5f5f5; color: #333; margin: 0; }
+        .topbar { background: #000; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .topbar select { background: #333; color: white; border: 1px solid #555; padding: 5px 10px; border-radius: 3px; }
+        .summary-bar { background: #eee; padding: 10px 20px; border-bottom: 1px solid #ccc; }
+        .summary-stats { display: inline-block; margin-right: 20px; }
+        .summary-stats .label { font-weight: bold; }
+        .file-selector { background: white; border-bottom: 1px solid #ccc; padding: 0; }
+        .file-selector a { display: block; padding: 10px 20px; text-decoration: none; color: #00f; border-bottom: 1px solid #eee; }
+        .file-selector a:hover { background: #f5f5f5; }
+        .file-content { background: white; }
+        .source-line { display: block; font-family: 'Courier New', Consolas, monospace; font-size: 13px; line-height: 1.5; white-space: pre; padding: 0; border: none; }
+        .source-line:hover { background: #f0f0f0; }
+        .line-num { display: inline-block; width: 60px; text-align: right; padding-right: 10px; color: #666; user-select: none; background: #f5f5f5; border-right: 1px solid #ddd; }
+        .line-count { display: inline-block; width: 80px; text-align: right; padding: 0 10px; user-select: none; font-weight: bold; }
+        .line-code { display: inline-block; padding-left: 10px; }
+        .cov0 { background: #ffcccc; }
+        .cov0 .line-count { color: #c00; }
+        .cov1, .cov2, .cov3, .cov4, .cov5, .cov6, .cov7, .cov8 { background: #c0ffc0; }
+        .cov1 .line-count, .cov2 .line-count, .cov3 .line-count, .cov4 .line-count,
+        .cov5 .line-count, .cov6 .line-count, .cov7 .line-count, .cov8 .line-count { color: #080; }
+        .not-tracked { background: #f5f5f5; }
+        .not-tracked .line-count { color: #999; }
+        /* SQL Syntax highlighting */
+        .sql-keyword { color: #0000ff; font-weight: bold; }
+        .sql-string { color: #a31515; }
+        .sql-comment { color: #008000; font-style: italic; }
+        .sql-number { color: #098658; }
+        .sql-operator { color: #000; }
+        .sql-function { color: #795e26; }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <span>pgcov</span>
+        <select id="fileSelector" onchange="location.href='#'+this.value">
+            <option value="">-- Select file --</option>
+            <option value="testdata/html_demo/sample.sql">testdata/html_demo/sample.sql</option>
+        </select>
+    </div>
+    <div class="summary-bar">
+        <span class="summary-stats"><span class="label">Total Coverage:</span> 82.35%</span>
+        <span class="summary-stats"><span class="label">Generated:</span> Mon, 06 Jan 2026 18:50:00 UTC</span>
+    </div>
+    <div class="file-selector">
+        <a href="#testdata/html_demo/sample.sql">testdata/html_demo/sample.sql (82.35%)</a>
+    </div>
+    <div class="file-content" id="testdata/html_demo/sample.sql">
+        <h2 style="padding: 20px; background: #f0f0f0; border-bottom: 2px solid #ccc; font-family: 'Courier New', monospace;">testdata/html_demo/sample.sql (82.35%)</h2>
+        <div class="source-line not-tracked">
+            <span class="line-num">1</span>
+            <span class="line-count"></span>
+            <span class="line-code"><span class="sql-comment">-- Sample SQL file for testing</span></span>
+        </div>
+        <div class="source-line cov1">
+            <span class="line-num">2</span>
+            <span class="line-count">1</span>
+            <span class="line-code"><span class="sql-keyword">CREATE</span> <span class="sql-keyword">TABLE</span> users (</span>
+        </div>
+        <div class="source-line cov1">
+            <span class="line-num">3</span>
+            <span class="line-count">1</span>
+            <span class="line-code">    id <span class="sql-keyword">SERIAL</span> <span class="sql-keyword">PRIMARY</span> <span class="sql-keyword">KEY</span>,</span>
+        </div>
+        <div class="source-line cov1">
+            <span class="line-num">4</span>
+            <span class="line-count">1</span>
+            <span class="line-code">    username <span class="sql-keyword">VARCHAR</span>(<span class="sql-number">50</span>) <span class="sql-keyword">NOT</span> <span class="sql-keyword">NULL</span>,</span>
+        </div>
+        <div class="source-line cov1">
+            <span class="line-num">5</span>
+            <span class="line-count">1</span>
+            <span class="line-code">    email <span class="sql-keyword">VARCHAR</span>(<span class="sql-number">100</span>) <span class="sql-keyword">UNIQUE</span>,</span>
+        </div>
+        <div class="source-line cov1">
+            <span class="line-num">6</span>
+            <span class="line-count">1</span>
+            <span class="line-code">    created_at <span class="sql-keyword">TIMESTAMP</span> <span class="sql-keyword">DEFAULT</span> <span class="sql-function">NOW</span>()</span>
+        </div>
+        <div class="source-line cov1">
+            <span class="line-num">7</span>
+            <span class="line-count">1</span>
+            <span class="line-code">);</span>
+        </div>
+        <div class="source-line not-tracked">
+            <span class="line-num">8</span>
+            <span class="line-count"></span>
+            <span class="line-code"></span>
+        </div>
+        <div class="source-line not-tracked">
+            <span class="line-num">9</span>
+            <span class="line-count"></span>
+            <span class="line-code"><span class="sql-comment">-- Insert some test data</span></span>
+        </div>
+        <div class="source-line cov5">
+            <span class="line-num">10</span>
+            <span class="line-count">5</span>
+            <span class="line-code"><span class="sql-keyword">INSERT</span> <span class="sql-keyword">INTO</span> users (username, email) <span class="sql-keyword">VALUES</span></span>
+        </div>
+        <div class="source-line cov5">
+            <span class="line-num">11</span>
+            <span class="line-count">5</span>
+            <span class="line-code">    (<span class="sql-string">'alice'</span>, <span class="sql-string">'alice@example.com'</span>),</span>
+        </div>
+        <div class="source-line cov5">
+            <span class="line-num">12</span>
+            <span class="line-count">5</span>
+            <span class="line-code">    (<span class="sql-string">'bob'</span>, <span class="sql-string">'bob@example.com'</span>);</span>
+        </div>
+        <div class="source-line not-tracked">
+            <span class="line-num">13</span>
+            <span class="line-count"></span>
+            <span class="line-code"></span>
+        </div>
+        <div class="source-line not-tracked">
+            <span class="line-num">14</span>
+            <span class="line-count"></span>
+            <span class="line-code"><span class="sql-comment">-- Query example</span></span>
+        </div>
+        <div class="source-line cov3">
+            <span class="line-num">15</span>
+            <span class="line-count">3</span>
+            <span class="line-code"><span class="sql-keyword">SELECT</span> * <span class="sql-keyword">FROM</span> users <span class="sql-keyword">WHERE</span> id = <span class="sql-number">1</span>;</span>
+        </div>
+        <div class="source-line not-tracked">
+            <span class="line-num">16</span>
+            <span class="line-count"></span>
+            <span class="line-code"></span>
+        </div>
+        <div class="source-line not-tracked">
+            <span class="line-num">17</span>
+            <span class="line-count"></span>
+            <span class="line-code"><span class="sql-comment">-- Update example</span></span>
+        </div>
+        <div class="source-line cov2">
+            <span class="line-num">18</span>
+            <span class="line-count">2</span>
+            <span class="line-code"><span class="sql-keyword">UPDATE</span> users <span class="sql-keyword">SET</span> email = <span class="sql-string">'newemail@example.com'</span> <span class="sql-keyword">WHERE</span> username = <span class="sql-string">'alice'</span>;</span>
+        </div>
+        <div class="source-line not-tracked">
+            <span class="line-num">19</span>
+            <span class="line-count"></span>
+            <span class="line-code"></span>
+        </div>
+        <div class="source-line not-tracked">
+            <span class="line-num">20</span>
+            <span class="line-count"></span>
+            <span class="line-code"><span class="sql-comment">-- Conditional logic</span></span>
+        </div>
+        <div class="source-line cov1">
+            <span class="line-num">21</span>
+            <span class="line-count">1</span>
+            <span class="line-code"><span class="sql-keyword">DO</span> $$</span>
+        </div>
+        <div class="source-line cov1">
+            <span class="line-num">22</span>
+            <span class="line-count">1</span>
+            <span class="line-code"><span class="sql-keyword">BEGIN</span></span>
+        </div>
+        <div class="source-line cov1">
+            <span class="line-num">23</span>
+            <span class="line-count">1</span>
+            <span class="line-code">    <span class="sql-keyword">IF</span> <span class="sql-keyword">EXISTS</span> (<span class="sql-keyword">SELECT</span> <span class="sql-number">1</span> <span class="sql-keyword">FROM</span> users <span class="sql-keyword">WHERE</span> username = <span class="sql-string">'admin'</span>) <span class="sql-keyword">THEN</span></span>
+        </div>
+        <div class="source-line cov0">
+            <span class="line-num">24</span>
+            <span class="line-count">0</span>
+            <span class="line-code">        <span class="sql-keyword">RAISE</span> NOTICE <span class="sql-string">'Admin user exists'</span>;</span>
+        </div>
+        <div class="source-line cov0">
+            <span class="line-num">25</span>
+            <span class="line-count">0</span>
+            <span class="line-code">    <span class="sql-keyword">ELSE</span></span>
+        </div>
+        <div class="source-line cov1">
+            <span class="line-num">26</span>
+            <span class="line-count">1</span>
+            <span class="line-code">        <span class="sql-keyword">INSERT</span> <span class="sql-keyword">INTO</span> users (username, email) <span class="sql-keyword">VALUES</span> (<span class="sql-string">'admin'</span>, <span class="sql-string">'admin@example.com'</span>);</span>
+        </div>
+        <div class="source-line cov1">
+            <span class="line-num">27</span>
+            <span class="line-count">1</span>
+            <span class="line-code">    <span class="sql-keyword">END</span> <span class="sql-keyword">IF</span>;</span>
+        </div>
+        <div class="source-line cov1">
+            <span class="line-num">28</span>
+            <span class="line-count">1</span>
+            <span class="line-code"><span class="sql-keyword">END</span>;</span>
+        </div>
+        <div class="source-line not-tracked">
+            <span class="line-num">29</span>
+            <span class="line-count"></span>
+            <span class="line-code">$$;</span>
+        </div>
+    </div>
+</body>
+</html>

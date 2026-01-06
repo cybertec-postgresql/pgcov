@@ -1,9 +1,13 @@
 package report
 
 import (
+	"bufio"
 	"fmt"
 	"html"
 	"io"
+	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -15,7 +19,7 @@ import (
 type HTMLReporter struct{}
 
 // NewHTMLReporter creates a new HTML reporter
-func NewHTMLReporter() *HTMLReporter {
+func  NewHTMLReporter() *HTMLReporter {
 	return &HTMLReporter{}
 }
 
@@ -29,18 +33,13 @@ func (r *HTMLReporter) Format(cov *coverage.Coverage, writer io.Writer) error {
 	sort.Strings(files)
 
 	// Write HTML header
-	if err := r.writeHeader(cov, writer); err != nil {
+	if err := r.writeHeader(cov, files, writer); err != nil {
 		return err
 	}
 
-	// Write summary section
-	if err := r.writeSummary(cov, files, writer); err != nil {
-		return err
-	}
-
-	// Write file details
+	// Write file details with source code
 	for _, file := range files {
-		if err := r.writeFileDetail(file, cov, writer); err != nil {
+		if err := r.writeFileDetailWithSource(file, cov, writer); err != nil {
 			return err
 		}
 	}
@@ -54,188 +53,307 @@ func (r *HTMLReporter) Format(cov *coverage.Coverage, writer io.Writer) error {
 }
 
 // writeHeader writes the HTML document header with CSS
-func (r *HTMLReporter) writeHeader(cov *coverage.Coverage, writer io.Writer) error {
+func (r *HTMLReporter) writeHeader(cov *coverage.Coverage, files []string, writer io.Writer) error {
 	timestamp := time.Now().Format(time.RFC1123)
 	if !cov.Timestamp.IsZero() {
 		timestamp = cov.Timestamp.Format(time.RFC1123)
 	}
+
+	totalPercent := cov.TotalLineCoveragePercent()
 
 	_, err := fmt.Fprintf(writer, `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>pgcov Coverage Report</title>
+    <title>Coverage Report</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f5f5f5; color: #333; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        header { background: #2c3e50; color: white; padding: 30px 0; margin-bottom: 30px; }
-        header h1 { font-size: 2.5em; margin-bottom: 10px; }
-        header .meta { opacity: 0.8; font-size: 0.9em; }
-        .summary { background: white; border-radius: 8px; padding: 25px; margin-bottom: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .summary h2 { margin-bottom: 20px; color: #2c3e50; }
-        .summary-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
-        .stat-card { background: #f8f9fa; padding: 20px; border-radius: 6px; border-left: 4px solid #3498db; }
-        .stat-card .label { font-size: 0.85em; color: #7f8c8d; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
-        .stat-card .value { font-size: 2em; font-weight: bold; color: #2c3e50; }
-        .coverage-bar { width: 100%%; height: 24px; background: #ecf0f1; border-radius: 4px; overflow: hidden; margin-top: 10px; }
-        .coverage-fill { height: 100%%; background: linear-gradient(90deg, #e74c3c 0%%, #f39c12 50%%, #2ecc71 100%%); transition: width 0.3s ease; }
-        .file-list { background: white; border-radius: 8px; padding: 25px; margin-bottom: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .file-list h2 { margin-bottom: 20px; color: #2c3e50; }
-        .file-item { padding: 15px; border-bottom: 1px solid #ecf0f1; display: flex; justify-content: space-between; align-items: center; }
-        .file-item:last-child { border-bottom: none; }
-        .file-item:hover { background: #f8f9fa; }
-        .file-name { font-family: 'Courier New', monospace; font-size: 0.95em; }
-        .file-coverage { font-weight: bold; padding: 4px 12px; border-radius: 4px; }
-        .file-coverage.high { background: #d4edda; color: #155724; }
-        .file-coverage.medium { background: #fff3cd; color: #856404; }
-        .file-coverage.low { background: #f8d7da; color: #721c24; }
-        .file-detail { background: white; border-radius: 8px; padding: 25px; margin-bottom: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .file-detail h3 { margin-bottom: 15px; color: #2c3e50; font-family: 'Courier New', monospace; }
-        .source-code { background: #282c34; color: #abb2bf; font-family: 'Courier New', monospace; font-size: 0.9em; line-height: 1.6; border-radius: 6px; overflow-x: auto; }
-        .source-line { display: flex; padding: 2px 0; }
-        .source-line:hover { background: rgba(255,255,255,0.05); }
-        .line-number { padding: 0 15px; text-align: right; user-select: none; color: #5c6370; min-width: 60px; }
-        .line-hits { padding: 0 10px; text-align: right; user-select: none; min-width: 50px; font-size: 0.85em; }
-        .line-content { padding: 0 15px; flex: 1; white-space: pre; }
-        .covered { background: rgba(46, 204, 113, 0.15); }
-        .covered .line-hits { color: #2ecc71; font-weight: bold; }
-        .uncovered { background: rgba(231, 76, 60, 0.15); }
-        .uncovered .line-hits { color: #e74c3c; font-weight: bold; }
-        .not-instrumented { opacity: 0.6; }
-        footer { text-align: center; padding: 30px 0; color: #7f8c8d; font-size: 0.9em; }
-        .keyword { color: #c678dd; }
-        .string { color: #98c379; }
-        .comment { color: #5c6370; font-style: italic; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f5f5f5; color: #333; margin: 0; }
+        .topbar { background: #000; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .topbar select { background: #333; color: white; border: 1px solid #555; padding: 5px 10px; border-radius: 3px; }
+        .summary-bar { background: #eee; padding: 10px 20px; border-bottom: 1px solid #ccc; }
+        .summary-stats { display: inline-block; margin-right: 20px; }
+        .summary-stats .label { font-weight: bold; }
+        .file-selector { background: white; border-bottom: 1px solid #ccc; padding: 0; }
+        .file-selector a { display: block; padding: 10px 20px; text-decoration: none; color: #00f; border-bottom: 1px solid #eee; }
+        .file-selector a:hover { background: #f5f5f5; }
+        .file-content { background: white; }
+        .source-line { display: block; font-family: 'Courier New', Consolas, monospace; font-size: 13px; line-height: 1.5; white-space: pre; padding: 0; border: none; }
+        .source-line:hover { background: #f0f0f0; }
+        .line-num { display: inline-block; width: 60px; text-align: right; padding-right: 10px; color: #666; user-select: none; background: #f5f5f5; border-right: 1px solid #ddd; }
+        .line-count { display: inline-block; width: 80px; text-align: right; padding: 0 10px; user-select: none; font-weight: bold; }
+        .line-code { display: inline-block; padding-left: 10px; }
+        .cov0 { background: #ffcccc; }
+        .cov0 .line-count { color: #c00; }
+        .cov1, .cov2, .cov3, .cov4, .cov5, .cov6, .cov7, .cov8 { background: #c0ffc0; }
+        .cov1 .line-count, .cov2 .line-count, .cov3 .line-count, .cov4 .line-count,
+        .cov5 .line-count, .cov6 .line-count, .cov7 .line-count, .cov8 .line-count { color: #080; }
+        .not-tracked { background: #f5f5f5; }
+        .not-tracked .line-count { color: #999; }
+        /* SQL Syntax highlighting */
+        .sql-keyword { color: #0000ff; font-weight: bold; }
+        .sql-string { color: #a31515; }
+        .sql-comment { color: #008000; font-style: italic; }
+        .sql-number { color: #098658; }
+        .sql-operator { color: #000; }
+        .sql-function { color: #795e26; }
     </style>
 </head>
 <body>
-    <header>
-        <div class="container">
-            <h1>📊 pgcov Coverage Report</h1>
-            <div class="meta">Generated: %s | Version: %s</div>
-        </div>
-    </header>
-    <div class="container">
-`, timestamp, html.EscapeString(cov.Version))
-	return err
-}
-
-// writeSummary writes the coverage summary section
-func (r *HTMLReporter) writeSummary(cov *coverage.Coverage, files []string, writer io.Writer) error {
-	totalLines := 0
-	coveredLines := 0
-
-	for _, file := range files {
-		hits := cov.Files[file]
-		totalLines += len(hits)
-		for _, count := range hits {
-			if count > 0 {
-				coveredLines++
-			}
-		}
-	}
-
-	totalPercent := cov.TotalLineCoveragePercent()
-
-	_, err := fmt.Fprintf(writer, `        <section class="summary">
-            <h2>Overall Coverage</h2>
-            <div class="summary-stats">
-                <div class="stat-card">
-                    <div class="label">Total Coverage</div>
-                    <div class="value">%.2f%%</div>
-                    <div class="coverage-bar">
-                        <div class="coverage-fill" style="width: %.2f%%;"></div>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Lines Covered</div>
-                    <div class="value">%d / %d</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Files</div>
-                    <div class="value">%d</div>
-                </div>
-            </div>
-        </section>
-
-`, totalPercent, totalPercent, coveredLines, totalLines, len(files))
-	return err
-}
-
-// writeFileDetail writes detailed coverage for a single file
-func (r *HTMLReporter) writeFileDetail(file string, cov *coverage.Coverage, writer io.Writer) error {
-	hits := cov.Files[file]
-	percent := cov.LineCoveragePercent(file)
-
-	coverageClass := "high"
-	if percent < 80 {
-		coverageClass = "medium"
-	}
-	if percent < 50 {
-		coverageClass = "low"
-	}
-
-	// Write file header
-	_, err := fmt.Fprintf(writer, `        <section class="file-detail">
-            <h3>%s <span class="file-coverage %s">%.2f%%</span></h3>
-            <div class="source-code">
-`, html.EscapeString(file), coverageClass, percent)
+    <div class="topbar">
+        <span>pgcov</span>
+        <select id="fileSelector" onchange="location.href='#'+this.value">
+            <option value="">-- Select file --</option>
+`)
 	if err != nil {
 		return err
 	}
 
-	// Get sorted line numbers
-	var lines []int
-	for line := range hits {
-		lines = append(lines, line)
-	}
-	sort.Ints(lines)
-
-	// Write source lines
-	for _, lineNum := range lines {
-		hitCount := hits[lineNum]
-		lineClass := ""
-		hitsDisplay := ""
-
-		if hitCount > 0 {
-			lineClass = "covered"
-			hitsDisplay = fmt.Sprintf("%d×", hitCount)
-		} else {
-			lineClass = "uncovered"
-			hitsDisplay = "0×"
-		}
-
-		// For now, we don't have the actual source code, so we show line numbers only
-		_, err := fmt.Fprintf(writer, `                <div class="source-line %s">
-                    <div class="line-number">%d</div>
-                    <div class="line-hits">%s</div>
-                    <div class="line-content">&nbsp;</div>
-                </div>
-`, lineClass, lineNum, hitsDisplay)
+	// Write file options
+	for _, file := range files {
+		_, err = fmt.Fprintf(writer, `            <option value="%s">%s</option>
+`, html.EscapeString(file), html.EscapeString(file))
 		if err != nil {
 			return err
 		}
 	}
 
-	// Close source-code div and file-detail section
-	_, err = writer.Write([]byte(`            </div>
-        </section>
+	// Write summary bar
+	_, err = fmt.Fprintf(writer, `        </select>
+    </div>
+    <div class="summary-bar">
+        <span class="summary-stats"><span class="label">Total Coverage:</span> %.2f%%%%</span>
+        <span class="summary-stats"><span class="label">Generated:</span> %s</span>
+    </div>
+    <div class="file-selector">
+`, totalPercent, html.EscapeString(timestamp))
+	if err != nil {
+		return err
+	}
 
+	// Write file links
+	for _, file := range files {
+		percent := cov.LineCoveragePercent(file)
+		_, err = fmt.Fprintf(writer, `        <a href="#%s">%s (%.2f%%%%)</a>
+`, html.EscapeString(file), html.EscapeString(file), percent)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = writer.Write([]byte(`    </div>
 `))
 	return err
 }
 
+// writeFileDetailWithSource writes detailed coverage for a single file with actual source code
+func (r *HTMLReporter) writeFileDetailWithSource(file string, cov *coverage.Coverage, writer io.Writer) error {
+	hits := cov.Files[file]
+	percent := cov.LineCoveragePercent(file)
+
+	// Write file header
+	_, err := fmt.Fprintf(writer, `    <div class="file-content" id="%s">
+        <h2 style="padding: 20px; background: #f0f0f0; border-bottom: 2px solid #ccc; font-family: 'Courier New', monospace;">%s (%.2f%%%%)</h2>
+`, html.EscapeString(file), html.EscapeString(file), percent)
+	if err != nil {
+		return err
+	}
+
+	// Read the source file
+	sourceLines, err := r.readSourceFile(file)
+	if err != nil {
+		// If we can't read the file, show line numbers only
+		_, err = fmt.Fprintf(writer, `        <div style="padding: 20px; color: #c00;">Error reading source file: %s</div>
+`, html.EscapeString(err.Error()))
+		if err != nil {
+			return err
+		}
+		
+		// Still show hit counts for lines we have
+		var lines []int
+		for line := range hits {
+			lines = append(lines, line)
+		}
+		sort.Ints(lines)
+
+		for _, lineNum := range lines {
+			hitCount := hits[lineNum]
+			covClass := r.getCoverageClass(hitCount)
+			countDisplay := r.getCountDisplay(hitCount)
+
+			_, err = fmt.Fprintf(writer, `        <div class="source-line %s">
+            <span class="line-num">%d</span>
+            <span class="line-count">%s</span>
+            <span class="line-code">(source not available)</span>
+        </div>
+`, covClass, lineNum, countDisplay)
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		// Show actual source code with coverage
+		for lineNum, lineContent := range sourceLines {
+			hitCount, hasCoverage := hits[lineNum]
+			covClass := "not-tracked"
+			countDisplay := ""
+
+			if hasCoverage {
+				covClass = r.getCoverageClass(hitCount)
+				countDisplay = r.getCountDisplay(hitCount)
+			}
+
+			// Apply SQL syntax highlighting
+			highlightedCode := r.highlightSQL(lineContent)
+
+			_, err = fmt.Fprintf(writer, `        <div class="source-line %s">
+            <span class="line-num">%d</span>
+            <span class="line-count">%s</span>
+            <span class="line-code">%s</span>
+        </div>
+`, covClass, lineNum, countDisplay, highlightedCode)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// Close file-content div
+	_, err = writer.Write([]byte(`    </div>
+`))
+	return err
+}
+
+// readSourceFile reads a source file and returns a map of line numbers to content
+func (r *HTMLReporter) readSourceFile(filePath string) (map[int]string, error) {
+	// Try to open the file - handle both absolute and relative paths
+	file, err := os.Open(filePath)
+	if err != nil {
+		// Try with current working directory
+		cwd, _ := os.Getwd()
+		altPath := filepath.Join(cwd, filePath)
+		file, err = os.Open(altPath)
+		if err != nil {
+			return nil, fmt.Errorf("cannot open file: %w", err)
+		}
+	}
+	defer file.Close()
+
+	lines := make(map[int]string)
+	scanner := bufio.NewScanner(file)
+	lineNum := 1
+
+	for scanner.Scan() {
+		lines[lineNum] = scanner.Text()
+		lineNum++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading file: %w", err)
+	}
+
+	return lines, nil
+}
+
+// getCoverageClass returns the CSS class for coverage styling
+func (r *HTMLReporter) getCoverageClass(hitCount int) string {
+	if hitCount == 0 {
+		return "cov0"
+	}
+	// Use cov1-cov8 for different hit counts (like go tool cover)
+	if hitCount > 8 {
+		return "cov8"
+	}
+	return fmt.Sprintf("cov%d", hitCount)
+}
+
+// getCountDisplay returns the display string for hit count
+func (r *HTMLReporter) getCountDisplay(hitCount int) string {
+	if hitCount == 0 {
+		return "0"
+	}
+	if hitCount == 1 {
+		return "1"
+	}
+	return fmt.Sprintf("%d", hitCount)
+}
+
+// highlightSQL applies basic SQL syntax highlighting
+func (r *HTMLReporter) highlightSQL(line string) string {
+	if line == "" {
+		return ""
+	}
+
+	// Escape HTML first
+	line = html.EscapeString(line)
+
+	// SQL keywords (case-insensitive)
+	keywords := []string{
+		"SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER",
+		"TABLE", "INDEX", "VIEW", "FUNCTION", "PROCEDURE", "TRIGGER", "BEGIN", "END",
+		"IF", "THEN", "ELSE", "ELSIF", "LOOP", "WHILE", "FOR", "RETURN", "RETURNS",
+		"AS", "IS", "IN", "NOT", "NULL", "AND", "OR", "ON", "JOIN", "LEFT", "RIGHT",
+		"INNER", "OUTER", "CROSS", "USING", "GROUP", "BY", "ORDER", "HAVING", "LIMIT",
+		"OFFSET", "UNION", "INTERSECT", "EXCEPT", "CASE", "WHEN", "EXISTS", "ANY", "ALL",
+		"DECLARE", "SET", "INTO", "VALUES", "DEFAULT", "PRIMARY", "KEY", "FOREIGN",
+		"REFERENCES", "UNIQUE", "CHECK", "CONSTRAINT", "CASCADE", "SERIAL", "BOOLEAN",
+		"INTEGER", "BIGINT", "TEXT", "VARCHAR", "CHAR", "DATE", "TIME", "TIMESTAMP",
+		"NUMERIC", "DECIMAL", "REAL", "DOUBLE", "PRECISION", "ARRAY", "JSON", "JSONB",
+		"GRANT", "REVOKE", "TO", "WITH", "RECURSIVE", "DISTINCT", "ASC", "DESC",
+	}
+
+	// Common SQL functions
+	functions := []string{
+		"COUNT", "SUM", "AVG", "MIN", "MAX", "CONCAT", "SUBSTRING", "LENGTH",
+		"UPPER", "LOWER", "TRIM", "COALESCE", "NULLIF", "NOW", "CURRENT_TIMESTAMP",
+		"CURRENT_DATE", "EXTRACT", "DATE_PART", "AGE", "ARRAY_AGG", "STRING_AGG",
+	}
+
+	// Highlight keywords
+	for _, kw := range keywords {
+		// Match whole words only (case-insensitive)
+		re := regexp.MustCompile(`(?i)\b` + kw + `\b`)
+		line = re.ReplaceAllStringFunc(line, func(match string) string {
+			return `<span class="sql-keyword">` + match + `</span>`
+		})
+	}
+
+	// Highlight functions
+	for _, fn := range functions {
+		re := regexp.MustCompile(`(?i)\b` + fn + `\s*\(`)
+		line = re.ReplaceAllStringFunc(line, func(match string) string {
+			return `<span class="sql-function">` + match[:len(match)-1] + `</span>(`
+		})
+	}
+
+	// Highlight strings (single quotes)
+	stringRe := regexp.MustCompile(`'[^']*'`)
+	line = stringRe.ReplaceAllStringFunc(line, func(match string) string {
+		return `<span class="sql-string">` + match + `</span>`
+	})
+
+	// Highlight comments (-- style)
+	commentRe := regexp.MustCompile(`--.*$`)
+	line = commentRe.ReplaceAllStringFunc(line, func(match string) string {
+		return `<span class="sql-comment">` + match + `</span>`
+	})
+
+	// Highlight numbers
+	numberRe := regexp.MustCompile(`\b\d+(\.\d+)?\b`)
+	line = numberRe.ReplaceAllStringFunc(line, func(match string) string {
+		// Skip if already inside a span (e.g., from previous highlighting)
+		return `<span class="sql-number">` + match + `</span>`
+	})
+
+	return line
+}
+
 // writeFooter writes the HTML document footer
 func (r *HTMLReporter) writeFooter(writer io.Writer) error {
-	_, err := fmt.Fprintf(writer, `        <footer>
-            Generated by <strong>pgcov</strong> - PostgreSQL Test Coverage Tool
-        </footer>
-    </div>
-</body>
+	_, err := writer.Write([]byte(`</body>
 </html>
-`)
+`))
 	return err
 }
 
