@@ -3,11 +3,11 @@ package parser
 import (
 	"strings"
 
-	"github.com/pganalyze/pg_query_go/v6"
+	pgquery "github.com/pganalyze/pg_query_go/v6"
 )
 
 // ExtractStatements extracts individual statements from a parsed SQL file
-func ExtractStatements(sql string, result *pg_query.ParseResult) ([]*Statement, error) {
+func ExtractStatements(sql string, result *pgquery.ParseResult) ([]*Statement, error) {
 	var statements []*Statement
 
 	// Split SQL into lines for line number calculation
@@ -72,17 +72,17 @@ func calculateLineNumber(sql string, offset int) int {
 }
 
 // ClassifyStatement determines the type of SQL statement
-func ClassifyStatement(node *pg_query.Node) StatementType {
+func ClassifyStatement(node *pgquery.Node) StatementType {
 	if node == nil {
 		return StmtUnknown
 	}
 
 	switch node.Node.(type) {
-	case *pg_query.Node_CreateFunctionStmt:
+	case *pgquery.Node_CreateFunctionStmt:
 		return StmtFunction
-	case *pg_query.Node_CreateTrigStmt:
+	case *pgquery.Node_CreateTrigStmt:
 		return StmtTrigger
-	case *pg_query.Node_ViewStmt:
+	case *pgquery.Node_ViewStmt:
 		return StmtView
 	// Note: pg_query_go doesn't have a separate procedure type in older versions
 	// Procedures are represented as functions in PostgreSQL

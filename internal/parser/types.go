@@ -1,14 +1,14 @@
 package parser
 
 import (
-	"github.com/pganalyze/pg_query_go/v6"
 	"github.com/pashagolub/pgcov/internal/discovery"
+	pgquery "github.com/pganalyze/pg_query_go/v6"
 )
 
 // ParsedSQL represents a successfully parsed SQL file with AST
 type ParsedSQL struct {
 	File       *discovery.DiscoveredFile
-	AST        *pg_query.ParseResult // From pg_query_go
+	AST        *pgquery.ParseResult // From pg_query_go
 	Statements []*Statement
 }
 

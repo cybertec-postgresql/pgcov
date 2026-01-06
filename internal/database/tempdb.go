@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pashagolub/pgcov/pkg/types"
 )
 
@@ -84,11 +85,40 @@ func DestroyTempDatabase(ctx context.Context, pool *Pool, tempDB *types.TempData
 		return fmt.Errorf("failed to drop temporary database %s: %w", tempDB.Name, err)
 	}
 
+	// Verify database was actually dropped
+	if err := verifyDatabaseDropped(ctx, conn, tempDB.Name); err != nil {
+		return fmt.Errorf("cleanup verification failed for database %s: %w", tempDB.Name, err)
+	}
+
+	return nil
+}
+
+// verifyDatabaseDropped checks that a database no longer exists in PostgreSQL catalog
+func verifyDatabaseDropped(ctx context.Context, conn *pgxpool.Conn, dbName string) error {
+	verifySQL := `
+		SELECT EXISTS(
+			SELECT 1 
+			FROM pg_database 
+			WHERE datname = $1
+		)
+	`
+
+	var exists bool
+	err := conn.QueryRow(ctx, verifySQL, dbName).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("failed to verify database deletion: %w", err)
+	}
+
+	if exists {
+		return fmt.Errorf("database %s still exists after DROP command", dbName)
+	}
+
 	return nil
 }
 
 // CleanupStaleTempDatabases removes old pgcov temporary databases
 // This is useful for cleanup after crashes or interrupted test runs
+// Returns list of cleaned databases and any errors encountered
 func CleanupStaleTempDatabases(ctx context.Context, pool *Pool, olderThan time.Duration) ([]string, error) {
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
@@ -110,6 +140,7 @@ func CleanupStaleTempDatabases(ctx context.Context, pool *Pool, olderThan time.D
 	defer rows.Close()
 
 	var cleaned []string
+	var failedCleanup []string
 
 	for rows.Next() {
 		var dbName string
@@ -124,7 +155,14 @@ func CleanupStaleTempDatabases(ctx context.Context, pool *Pool, olderThan time.D
 		// Attempt to drop (will fail if database is in use)
 		if err := DestroyTempDatabase(ctx, pool, tempDB); err == nil {
 			cleaned = append(cleaned, dbName)
+		} else {
+			failedCleanup = append(failedCleanup, dbName)
 		}
+	}
+
+	// Report cleanup failures as non-fatal warning
+	if len(failedCleanup) > 0 {
+		return cleaned, fmt.Errorf("failed to cleanup %d databases: %v (may be in use)", len(failedCleanup), failedCleanup)
 	}
 
 	return cleaned, nil

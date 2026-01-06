@@ -6,7 +6,7 @@ import (
 
 	"github.com/pashagolub/pgcov/internal/discovery"
 	"github.com/pashagolub/pgcov/internal/errors"
-	pg_query "github.com/pganalyze/pg_query_go/v6"
+	pgquery "github.com/pganalyze/pg_query_go/v6"
 )
 
 // Parse parses a SQL file and returns ParsedSQL with AST and statements
@@ -18,7 +18,7 @@ func Parse(file *discovery.DiscoveredFile) (*ParsedSQL, error) {
 	}
 
 	// Parse SQL using pg_query_go
-	result, err := pg_query.Parse(string(content))
+	result, err := pgquery.Parse(string(content))
 	if err != nil {
 		// Extract location information if available
 		return nil, &errors.ParseError{
@@ -52,8 +52,8 @@ func ParseFile(filePath string) (*ParsedSQL, error) {
 }
 
 // ParseSQL parses SQL text directly without a file
-func ParseSQL(sql string) (*pg_query.ParseResult, error) {
-	result, err := pg_query.Parse(sql)
+func ParseSQL(sql string) (*pgquery.ParseResult, error) {
+	result, err := pgquery.Parse(sql)
 	if err != nil {
 		return nil, &errors.ParseError{
 			File:    "<inline>",
