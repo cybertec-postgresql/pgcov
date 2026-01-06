@@ -30,13 +30,18 @@ func NewParseError(file string, line, column int, message string) *ParseError {
 
 // ConnectionError represents PostgreSQL connection failure
 type ConnectionError struct {
-	Host    string
-	Port    int
-	Message string
+	Host       string
+	Port       int
+	Message    string
+	Suggestion string
 }
 
 func (e *ConnectionError) Error() string {
-	return fmt.Sprintf("failed to connect to %s:%d: %s", e.Host, e.Port, e.Message)
+	msg := fmt.Sprintf("failed to connect to %s:%d: %s", e.Host, e.Port, e.Message)
+	if e.Suggestion != "" {
+		msg += fmt.Sprintf("\nSuggestion: %s", e.Suggestion)
+	}
+	return msg
 }
 
 // NewConnectionError creates a new ConnectionError

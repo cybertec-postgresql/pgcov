@@ -4,7 +4,14 @@ import (
 	"time"
 
 	"github.com/pashagolub/pgcov/internal/discovery"
+	"github.com/pashagolub/pgcov/pkg/types"
 )
+
+// CoverageSignal is an alias for the shared type
+type CoverageSignal = types.CoverageSignal
+
+// TempDatabase is an alias for the shared type
+type TempDatabase = types.TempDatabase
 
 // TestRun represents a single test execution
 type TestRun struct {
@@ -46,19 +53,7 @@ func (ts TestStatus) String() string {
 	}
 }
 
-// TempDatabase represents a temporary PostgreSQL database for test isolation
-type TempDatabase struct {
-	Name             string // e.g., "pgcov_test_20260105_a3f9c2b1"
-	CreatedAt        time.Time
-	ConnectionString string
-}
-
-// CoverageSignal represents a single coverage signal emitted via NOTIFY
-type CoverageSignal struct {
-	SignalID  string    // Matches CoveragePoint.SignalID
-	Timestamp time.Time // When signal received
-	TestRun   *TestRun  // Associated test (optional reference)
-}
+// Note: CoverageSignal and TempDatabase moved to pkg/types to avoid import cycles
 
 // Duration returns the test execution duration
 func (tr *TestRun) Duration() time.Duration {

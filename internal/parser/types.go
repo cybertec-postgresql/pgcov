@@ -1,8 +1,8 @@
 package parser
 
 import (
+	"github.com/pganalyze/pg_query_go/v6"
 	"github.com/pashagolub/pgcov/internal/discovery"
-	pg_query "github.com/pganalyze/pg_query_go/v6"
 )
 
 // ParsedSQL represents a successfully parsed SQL file with AST

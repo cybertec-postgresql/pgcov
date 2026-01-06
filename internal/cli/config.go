@@ -4,26 +4,12 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/pashagolub/pgcov/pkg/types"
 )
 
-// Config holds runtime configuration combining flags, environment variables, and defaults
-type Config struct {
-	// PostgreSQL connection
-	PGHost     string
-	PGPort     int
-	PGUser     string
-	PGPassword string
-	PGDatabase string // Template database for creating temp DBs
-
-	// Execution
-	SearchPath  string        // Root path for test/source discovery
-	Timeout     time.Duration // Per-test timeout
-	Parallelism int           // Max concurrent tests (1 = sequential)
-
-	// Output
-	CoverageFile string // Coverage data output path
-	Verbose      bool   // Enable debug logging
-}
+// Config is an alias for the shared Config type
+type Config = types.Config
 
 // DefaultConfig provides default configuration values
 var DefaultConfig = Config{
@@ -63,8 +49,8 @@ func LoadConfig() *Config {
 	return &cfg
 }
 
-// ApplyFlags applies command-line flag values to configuration
-func (c *Config) ApplyFlags(host string, port int, user, password, database string,
+// ApplyFlagsToConfig applies command-line flag values to configuration
+func ApplyFlagsToConfig(c *Config, host string, port int, user, password, database string,
 	timeout time.Duration, parallel int, coverageFile string, verbose bool) {
 
 	if host != "" {
@@ -93,3 +79,4 @@ func (c *Config) ApplyFlags(host string, port int, user, password, database stri
 	}
 	c.Verbose = verbose
 }
+

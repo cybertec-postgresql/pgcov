@@ -9,6 +9,32 @@
     "chat.tools.terminal.autoApprove": {
         ".specify/scripts/bash/": true,
         ".specify/scripts/powershell/": true
+    },
+    // CGO configuration for pgcov
+    // pg_query_go requires CGO to be enabled
+    "go.toolsEnvVars": {
+        "CGO_ENABLED": "1",
+        "CC": "C:\\msys64\\mingw64\\bin\\gcc.exe"
+    },
+    // Expose CGO environment to integrated terminal (Windows)
+    "terminal.integrated.env.windows": {
+        "CGO_ENABLED": "1",
+        "CC": "C:\\msys64\\mingw64\\bin\\gcc.exe",
+        "PATH": "${env:PATH};C:\\msys64\\mingw64\\bin"
+    },
+    // Expose CGO environment to integrated terminal (Linux)
+    "terminal.integrated.env.linux": {
+        "CGO_ENABLED": "1"
+    },
+    // Expose CGO environment to integrated terminal (macOS)
+    "terminal.integrated.env.osx": {
+        "CGO_ENABLED": "1"
+    },
+    // Go language server (gopls) settings
+    "gopls": {
+        "build.env": {
+            "CGO_ENABLED": "1"
+        }
     }
 }
 

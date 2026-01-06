@@ -65,65 +65,65 @@ Single Go project: `internal/`, `cmd/`, `testdata/` at repository root
 
 **Discovery Layer**
 
-- [ ] T016 [P] [US1] Implement filesystem discovery in internal/discovery/discover.go (find *_test.sql files)
-- [ ] T017 [P] [US1] Implement file classifier in internal/discovery/classifier.go (classify test vs source files)
-- [ ] T018 [US1] Implement co-location strategy in internal/discovery/discover.go (find source files in same directory as tests)
+- [X] T016 [P] [US1] Implement filesystem discovery in internal/discovery/discover.go (find *_test.sql files)
+- [X] T017 [P] [US1] Implement file classifier in internal/discovery/classifier.go (classify test vs source files)
+- [X] T018 [US1] Implement co-location strategy in internal/discovery/discover.go (find source files in same directory as tests)
 
 **Parser Layer**
 
-- [ ] T019 [P] [US1] Create pg_query_go wrapper in internal/parser/parse.go (parse SQL files into AST)
-- [ ] T020 [P] [US1] Implement AST utilities in internal/parser/ast.go (extract statements, line numbers, statement types)
-- [ ] T021 [US1] Add parse error handling in internal/parser/parse.go (return ParseError with file/line/column context)
+- [X] T019 [P] [US1] Create pg_query_go wrapper in internal/parser/parse.go (parse SQL files into AST)
+- [X] T020 [P] [US1] Implement AST utilities in internal/parser/ast.go (extract statements, line numbers, statement types)
+- [X] T021 [US1] Add parse error handling in internal/parser/parse.go (return ParseError with file/line/column context)
 
 **Instrumentation Layer**
 
-- [ ] T022 [P] [US1] Implement AST instrumenter in internal/instrument/instrumenter.go (inject NOTIFY calls for statement coverage)
-- [ ] T023 [P] [US1] Implement coverage point tracker in internal/instrument/location.go (track file:line locations)
-- [ ] T024 [US1] Implement signal ID generator in internal/instrument/injector.go (format: file:line)
-- [ ] T025 [US1] Add instrumentation error handling in internal/instrument/instrumenter.go (handle AST rewrite failures)
+- [X] T022 [P] [US1] Implement AST instrumenter in internal/instrument/instrumenter.go (inject NOTIFY calls for statement coverage)
+- [X] T023 [P] [US1] Implement coverage point tracker in internal/instrument/location.go (track file:line locations)
+- [X] T024 [US1] Implement signal ID generator in internal/instrument/injector.go (format: file:line)
+- [X] T025 [US1] Add instrumentation error handling in internal/instrument/instrumenter.go (handle AST rewrite failures)
 
 **Database Layer**
 
-- [ ] T026 [P] [US1] Implement PostgreSQL connection pool in internal/database/pool.go using pgx/v5
-- [ ] T027 [P] [US1] Implement temporary database creator in internal/database/tempdb.go (CREATE DATABASE with unique name)
-- [ ] T028 [P] [US1] Implement temporary database destroyer in internal/database/tempdb.go (DROP DATABASE WITH FORCE)
-- [ ] T029 [P] [US1] Implement LISTEN/NOTIFY handler in internal/database/listener.go (receive coverage signals)
-- [ ] T030 [US1] Add PostgreSQL version check in internal/database/pool.go (validate PostgreSQL 13+)
-- [ ] T031 [US1] Add connection error handling in internal/database/pool.go (return ConnectionError with suggestions)
+- [X] T026 [P] [US1] Implement PostgreSQL connection pool in internal/database/pool.go using pgx/v5
+- [X] T027 [P] [US1] Implement temporary database creator in internal/database/tempdb.go (CREATE DATABASE with unique name)
+- [X] T028 [P] [US1] Implement temporary database destroyer in internal/database/tempdb.go (DROP DATABASE WITH FORCE)
+- [X] T029 [P] [US1] Implement LISTEN/NOTIFY handler in internal/database/listener.go (receive coverage signals)
+- [X] T030 [US1] Add PostgreSQL version check in internal/database/pool.go (validate PostgreSQL 13+)
+- [X] T031 [US1] Add connection error handling in internal/database/pool.go (return ConnectionError with suggestions)
 
 **Runner Layer**
 
-- [ ] T032 [P] [US1] Implement test executor in internal/runner/executor.go (orchestrate test execution)
-- [ ] T033 [P] [US1] Implement per-test workflow in internal/runner/executor.go (create temp DB, load instrumented code, run test, collect signals, destroy DB)
-- [ ] T034 [US1] Add test timeout enforcement in internal/runner/executor.go (context.WithTimeout)
-- [ ] T035 [US1] Add test failure detection in internal/runner/executor.go (capture SQL errors, set TestStatus)
+- [X] T032 [P] [US1] Implement test executor in internal/runner/executor.go (orchestrate test execution)
+- [X] T033 [P] [US1] Implement per-test workflow in internal/runner/executor.go (create temp DB, load instrumented code, run test, collect signals, destroy DB)
+- [X] T034 [US1] Add test timeout enforcement in internal/runner/executor.go (context.WithTimeout)
+- [X] T035 [US1] Add test failure detection in internal/runner/executor.go (capture SQL errors, set TestStatus)
 
 **Coverage Layer**
 
-- [ ] T036 [P] [US1] Implement coverage signal collector in internal/coverage/collector.go (aggregate signals from LISTEN/NOTIFY)
-- [ ] T037 [P] [US1] Implement coverage aggregation logic in internal/coverage/collector.go (map file:line to hit counts)
-- [ ] T038 [P] [US1] Implement coverage data persistence in internal/coverage/store.go (write JSON to .pgcov/coverage.json)
-- [ ] T039 [US1] Add coverage calculation in internal/coverage/model.go (compute line coverage percentages)
+- [X] T036 [P] [US1] Implement coverage signal collector in internal/coverage/collector.go (aggregate signals from LISTEN/NOTIFY)
+- [X] T037 [P] [US1] Implement coverage aggregation logic in internal/coverage/collector.go (map file:line to hit counts)
+- [X] T038 [P] [US1] Implement coverage data persistence in internal/coverage/store.go (write JSON to .pgcov/coverage.json)
+- [X] T039 [US1] Add coverage calculation in internal/coverage/model.go (compute line coverage percentages)
 
 **Reporter Layer**
 
-- [ ] T040 [P] [US1] Implement JSON reporter in internal/report/json.go (format coverage data as JSON)
-- [ ] T041 [P] [US1] Implement LCOV reporter in internal/report/lcov.go (format coverage data as LCOV)
-- [ ] T042 [US1] Implement reporter interface in internal/report/formatter.go (pluggable format selection)
+- [X] T040 [P] [US1] Implement JSON reporter in internal/report/json.go (format coverage data as JSON)
+- [X] T041 [P] [US1] Implement LCOV reporter in internal/report/lcov.go (format coverage data as LCOV)
+- [X] T042 [US1] Implement reporter interface in internal/report/formatter.go (pluggable format selection)
 
 **CLI Integration**
 
-- [ ] T043 [US1] Implement `pgcov run` command in internal/cli/run.go (wire all layers together)
-- [ ] T044 [US1] Implement `pgcov report` command in internal/cli/report.go (read coverage file and output report)
-- [ ] T045 [US1] Add CLI output formatting in internal/cli/run.go (test summary with pass/fail counts and coverage percentage)
-- [ ] T046 [US1] Add exit code logic in internal/cli/run.go (0 for all passed, 1 for failures)
+- [X] T043 [US1] Implement `pgcov run` command in internal/cli/run.go (wire all layers together)
+- [X] T044 [US1] Implement `pgcov report` command in internal/cli/report.go (read coverage file and output report)
+- [X] T045 [US1] Add CLI output formatting in internal/cli/run.go (test summary with pass/fail counts and coverage percentage)
+- [X] T046 [US1] Add exit code logic in internal/cli/run.go (0 for all passed, 1 for failures)
 
 **Testing & Validation**
 
-- [ ] T047 [US1] Create test fixtures in testdata/simple/ (basic SQL test and source files)
-- [ ] T048 [US1] Create integration test in internal/integration_test.go (end-to-end test with PostgreSQL)
-- [ ] T049 [US1] Verify JSON coverage output schema matches contract in tests
-- [ ] T050 [US1] Verify LCOV output format matches specification in tests
+- [X] T047 [US1] Create test fixtures in testdata/simple/ (basic SQL test and source files)
+- [X] T048 [US1] Create integration test in internal/integration_test.go (end-to-end test with PostgreSQL)
+- [X] T049 [US1] Verify JSON coverage output schema matches contract in tests
+- [X] T050 [US1] Verify LCOV output format matches specification in tests
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -261,13 +261,16 @@ Single Go project: `internal/`, `cmd/`, `testdata/` at repository root
 ### Parallel Opportunities
 
 **Setup (Phase 1)**:
+
 - T004 (.gitignore) || T005 (README.md)
 
 **Foundational (Phase 2)**:
+
 - T006-T013 (all type definitions can be created in parallel)
 - T014 (CLI skeleton) || T015 (version/help commands)
 
 **User Story 1 (Phase 3)**:
+
 - T016 (discovery) || T017 (classifier)
 - T019 (parser wrapper) || T020 (AST utilities)
 - T022 (instrumenter) || T023 (coverage point tracker)
@@ -277,19 +280,24 @@ Single Go project: `internal/`, `cmd/`, `testdata/` at repository root
 - T040 (JSON reporter) || T041 (LCOV reporter)
 
 **User Story 2 (Phase 4)**:
+
 - T051 (naming) || T052 (isolation validator)
 
 **User Story 3 (Phase 5)**:
+
 - T057 (connection flags) || T058 (execution flags)
 
 **User Story 4 (Phase 6)**:
+
 - T065 (format flag) || T066 (output flag)
 - T070 (JSON test) || T071 (LCOV test)
 
 **Parallel Execution (Phase 7)**:
+
 - T073 (goroutine pool) || T074 (thread-safe aggregation)
 
 **Polish (Phase 8)**:
+
 - T080-T085 (all unit tests can run in parallel)
 - T088-T092 (documentation tasks can run in parallel)
 
@@ -363,6 +371,7 @@ With multiple developers:
 **Total Tasks**: 95 tasks
 
 **Task Count by Phase**:
+
 - Phase 1 (Setup): 5 tasks
 - Phase 2 (Foundational): 10 tasks
 - Phase 3 (User Story 1): 35 tasks
@@ -375,6 +384,7 @@ With multiple developers:
 **Parallel Opportunities**: 50+ tasks marked [P] can run in parallel within their phase
 
 **Independent Test Criteria**:
+
 - **US1**: Place test files, run `pgcov run`, verify coverage report generated
 - **US2**: Run tests in different orders, verify identical results
 - **US3**: Configure via flags/env vars, verify successful execution
