@@ -186,12 +186,12 @@ func TestHTMLReporter_CoveragePercentages(t *testing.T) {
 
 	output := buf.String()
 
-	// Verify percentage values are present
-	if !strings.Contains(output, "75.00%") {
+	// Verify percentage values are present (Go format uses .1f, so 75.0% and 33.3%)
+	if !strings.Contains(output, "75.0%") && !strings.Contains(output, "75%") {
 		t.Error("Missing high_coverage.sql percentage (75%)")
 	}
 
-	if !strings.Contains(output, "33.33%") {
+	if !strings.Contains(output, "33.3%") && !strings.Contains(output, "33%") {
 		t.Error("Missing low_coverage.sql percentage (33.33%)")
 	}
 }
@@ -221,12 +221,13 @@ func TestHTMLReporter_CSSPresent(t *testing.T) {
 		t.Error("Missing </style> closing tag")
 	}
 
-	// Verify some key CSS classes
+	// Verify key Go-style CSS classes
 	cssClasses := []string{
 		".cov0",
 		".cov1",
-		".source-line",
-		".line-num",
+		".cov8",
+		"#topbar",
+		"#nav",
 	}
 
 	for _, class := range cssClasses {
@@ -237,7 +238,7 @@ func TestHTMLReporter_CSSPresent(t *testing.T) {
 }
 
 func TestHTMLReporter_LineCoverage(t *testing.T) {
-	// Test line coverage indicators
+	// Test line coverage indicators with Go-style format
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
@@ -256,17 +257,7 @@ func TestHTMLReporter_LineCoverage(t *testing.T) {
 		t.Fatalf("FormatString failed: %v", err)
 	}
 
-	// Verify line numbers are present (new format uses line-num class)
-	if !strings.Contains(output, `class="line-num"`) {
-		t.Error("Missing line-num class")
-	}
-
-	// Verify hit count display (new format: just numbers like "5", "0", "10")
-	// Look for line-count spans with numbers
-	if !strings.Contains(output, `class="line-count"`) {
-		t.Error("Missing line-count class")
-	}
-
+	// In Go format, we use <span> elements with coverage classes and title attributes
 	// Check for coverage classes
 	if !strings.Contains(output, "cov5") && !strings.Contains(output, "cov8") {
 		t.Error("Missing coverage class for line 1 (5 hits)")
@@ -298,19 +289,9 @@ func TestHTMLReporter_ValidHTML5(t *testing.T) {
 		t.Error("HTML5 DOCTYPE not at beginning of document")
 	}
 
-	// Verify meta charset
-	if !strings.Contains(output, `<meta charset="UTF-8">`) {
+	// Go's format uses minimal HTML with charset in Content-Type meta tag
+	if !strings.Contains(output, `charset=utf-8`) {
 		t.Error("Missing UTF-8 charset declaration")
-	}
-
-	// Verify viewport meta tag
-	if !strings.Contains(output, `<meta name="viewport"`) {
-		t.Error("Missing viewport meta tag")
-	}
-
-	// Verify lang attribute
-	if !strings.Contains(output, `<html lang="en">`) {
-		t.Error("Missing lang attribute on html element")
 	}
 }
 
@@ -358,14 +339,14 @@ func TestHTMLReporter_SummarySection(t *testing.T) {
 		t.Fatalf("FormatString failed: %v", err)
 	}
 
-	// Verify summary bar exists
-	if !strings.Contains(output, `class="summary-bar"`) {
-		t.Error("Missing summary bar")
+	// Go format uses #topbar with #legend instead of summary-bar
+	if !strings.Contains(output, `id="topbar"`) {
+		t.Error("Missing topbar")
 	}
 
-	// Verify summary stats
-	if !strings.Contains(output, "Total Coverage") {
-		t.Error("Missing total coverage stat")
+	// Legend shows coverage info
+	if !strings.Contains(output, `id="legend"`) {
+		t.Error("Missing legend")
 	}
 }
 
