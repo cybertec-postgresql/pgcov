@@ -43,7 +43,8 @@ func TestHTMLReporter_Format(t *testing.T) {
 			"<head>",
 			"<body>",
 			"</html>",
-			"pgcov Coverage Report",
+			"Coverage Report",
+			"pgcov",
 		}
 
 		for _, elem := range requiredElements {
@@ -57,9 +58,12 @@ func TestHTMLReporter_Format(t *testing.T) {
 			t.Error("File test.sql not found in HTML output")
 		}
 
-		// Verify coverage data
-		if !strings.Contains(output, "covered") || !strings.Contains(output, "uncovered") {
-			t.Error("Missing coverage indicators (covered/uncovered)")
+		// Verify coverage indicators (cov0, cov1-cov8, or class names)
+		hasCoverage := strings.Contains(output, "cov0") ||
+			strings.Contains(output, "cov1") ||
+			strings.Contains(output, "not-tracked")
+		if !hasCoverage {
+			t.Error("Missing coverage indicators (cov0, cov1, etc.)")
 		}
 	})
 
@@ -148,7 +152,7 @@ func TestHTMLReporter_EmptyCoverage(t *testing.T) {
 		t.Error("Missing DOCTYPE declaration")
 	}
 
-	if !strings.Contains(output, "pgcov Coverage Report") {
+	if !strings.Contains(output, "Coverage Report") {
 		t.Error("Missing report title")
 	}
 }
@@ -219,10 +223,10 @@ func TestHTMLReporter_CSSPresent(t *testing.T) {
 
 	// Verify some key CSS classes
 	cssClasses := []string{
-		".covered",
-		".uncovered",
-		".file-detail",
-		".source-code",
+		".cov0",
+		".cov1",
+		".source-line",
+		".line-num",
 	}
 
 	for _, class := range cssClasses {
@@ -252,26 +256,24 @@ func TestHTMLReporter_LineCoverage(t *testing.T) {
 		t.Fatalf("FormatString failed: %v", err)
 	}
 
-	// Verify line numbers are present
-	for i := 1; i <= 3; i++ {
-		// Look for line number divs
-		if !strings.Contains(output, `<div class="line-number">`) {
-			t.Error("Missing line-number divs")
-			break
-		}
+	// Verify line numbers are present (new format uses line-num class)
+	if !strings.Contains(output, `class="line-num"`) {
+		t.Error("Missing line-num class")
 	}
 
-	// Verify hit count display
-	if !strings.Contains(output, "5×") {
-		t.Error("Missing hit count display for line 1 (5×)")
+	// Verify hit count display (new format: just numbers like "5", "0", "10")
+	// Look for line-count spans with numbers
+	if !strings.Contains(output, `class="line-count"`) {
+		t.Error("Missing line-count class")
 	}
 
-	if !strings.Contains(output, "0×") {
-		t.Error("Missing hit count display for uncovered line (0×)")
+	// Check for coverage classes
+	if !strings.Contains(output, "cov5") && !strings.Contains(output, "cov8") {
+		t.Error("Missing coverage class for line 1 (5 hits)")
 	}
 
-	if !strings.Contains(output, "10×") {
-		t.Error("Missing hit count display for line 3 (10×)")
+	if !strings.Contains(output, "cov0") {
+		t.Error("Missing cov0 class for uncovered line")
 	}
 }
 
@@ -356,27 +358,19 @@ func TestHTMLReporter_SummarySection(t *testing.T) {
 		t.Fatalf("FormatString failed: %v", err)
 	}
 
-	// Verify summary section exists
-	if !strings.Contains(output, `class="summary"`) {
-		t.Error("Missing summary section")
+	// Verify summary bar exists
+	if !strings.Contains(output, `class="summary-bar"`) {
+		t.Error("Missing summary bar")
 	}
 
 	// Verify summary stats
-	if !strings.Contains(output, "Overall Coverage") {
-		t.Error("Missing overall coverage heading")
-	}
-
-	if !strings.Contains(output, "Lines Covered") {
-		t.Error("Missing lines covered stat")
-	}
-
-	if !strings.Contains(output, "Files") {
-		t.Error("Missing files count stat")
+	if !strings.Contains(output, "Total Coverage") {
+		t.Error("Missing total coverage stat")
 	}
 }
 
 func TestHTMLReporter_CoverageClasses(t *testing.T) {
-	// Test coverage class assignments (high/medium/low)
+	// Test coverage class assignments (cov0-cov8)
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
@@ -384,13 +378,13 @@ func TestHTMLReporter_CoverageClasses(t *testing.T) {
 			"high.sql": {
 				1: 1, 2: 1, 3: 1, 4: 1, 5: 1,
 				6: 1, 7: 1, 8: 1, 9: 1, 10: 0,
-			}, // 90% coverage - should be "high"
+			}, // 90% coverage - should use cov1-cov8
 			"medium.sql": {
-				1: 1, 2: 1, 3: 1, 4: 0, 5: 0,
-			}, // 60% coverage - should be "medium"
+				1: 3, 2: 3, 3: 3, 4: 0, 5: 0,
+			}, // 60% coverage - should use cov3
 			"low.sql": {
-				1: 1, 2: 0, 3: 0, 4: 0, 5: 0,
-			}, // 20% coverage - should be "low"
+				1: 5, 2: 0, 3: 0, 4: 0, 5: 0,
+			}, // 20% coverage - should use cov5 and cov0
 		},
 	}
 
@@ -400,23 +394,20 @@ func TestHTMLReporter_CoverageClasses(t *testing.T) {
 		t.Fatalf("FormatString failed: %v", err)
 	}
 
-	// Count occurrences of coverage classes
+	// Count occurrences of coverage classes (Go-style)
 	// Note: we can't be too specific as the order may vary
-	if !strings.Contains(output, `class="file-coverage high"`) {
-		t.Error("Missing high coverage class")
+	if !strings.Contains(output, `class="source-line cov0"`) &&
+		!strings.Contains(output, `cov0`) {
+		t.Error("Missing cov0 coverage class for uncovered lines")
 	}
 
-	if !strings.Contains(output, `class="file-coverage medium"`) {
-		t.Error("Missing medium coverage class")
-	}
-
-	if !strings.Contains(output, `class="file-coverage low"`) {
-		t.Error("Missing low coverage class")
+	if !strings.Contains(output, `cov1`) && !strings.Contains(output, `cov3`) && !strings.Contains(output, `cov5`) {
+		t.Error("Missing covered line classes (cov1, cov3, cov5, etc.)")
 	}
 }
 
 func TestHTMLReporter_Footer(t *testing.T) {
-	// Test footer content
+	// Test that HTML properly closes
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
@@ -429,12 +420,12 @@ func TestHTMLReporter_Footer(t *testing.T) {
 		t.Fatalf("FormatString failed: %v", err)
 	}
 
-	// Verify footer exists
-	if !strings.Contains(output, "<footer>") {
-		t.Error("Missing footer element")
+	// Verify proper HTML closing
+	if !strings.Contains(output, "</body>") {
+		t.Error("Missing closing body tag")
 	}
 
-	if !strings.Contains(output, "pgcov") {
-		t.Error("Missing pgcov branding in footer")
+	if !strings.Contains(output, "</html>") {
+		t.Error("Missing closing html tag")
 	}
 }

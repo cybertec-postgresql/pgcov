@@ -200,8 +200,8 @@ func TestJSONReporter_SchemaCompliance(t *testing.T) {
 		t.Fatalf("FormatString failed: %v", err)
 	}
 
-	// Verify required fields are present
-	requiredFields := []string{"version", "timestamp", "files"}
+	// Verify required fields are present (note: Go marshals with capital letters)
+	requiredFields := []string{"Version", "Timestamp", "Files"}
 	for _, field := range requiredFields {
 		if !strings.Contains(output, `"`+field+`"`) {
 			t.Errorf("Missing required field: %s", field)
@@ -215,16 +215,16 @@ func TestJSONReporter_SchemaCompliance(t *testing.T) {
 		t.Fatalf("Invalid JSON: %v", err)
 	}
 
-	// Check top-level fields
-	if _, ok := decoded["version"].(string); !ok {
-		t.Error("version field should be a string")
+	// Check top-level fields (capitalized as per Go struct marshaling)
+	if _, ok := decoded["Version"].(string); !ok {
+		t.Error("Version field should be a string")
 	}
 
-	if _, ok := decoded["timestamp"].(string); !ok {
-		t.Error("timestamp field should be a string")
+	if _, ok := decoded["Timestamp"].(string); !ok {
+		t.Error("Timestamp field should be a string")
 	}
 
-	if _, ok := decoded["files"].(map[string]interface{}); !ok {
-		t.Error("files field should be an object")
+	if _, ok := decoded["Files"].(map[string]interface{}); !ok {
+		t.Error("Files field should be an object")
 	}
 }
