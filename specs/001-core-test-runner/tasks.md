@@ -177,14 +177,14 @@ Single Go project: `internal/`, `cmd/`, `testdata/` at repository root
 
 ### Implementation for User Story 4
 
-- [ ] T065 [P] [US4] Add format flag to report command in internal/cli/report.go (--format=json|lcov)
-- [ ] T066 [P] [US4] Add output flag to report command in internal/cli/report.go (-o, --output)
-- [ ] T067 [US4] Implement format selection logic in internal/cli/report.go (route to appropriate reporter)
-- [ ] T068 [US4] Add coverage file validation in internal/cli/report.go (check file exists, valid JSON)
-- [ ] T069 [US4] Add output writing in internal/cli/report.go (stdout or file based on --output flag)
-- [ ] T070 [US4] Create JSON output test in internal/report/json_test.go (verify schema compliance)
-- [ ] T071 [US4] Create LCOV output test in internal/report/lcov_test.go (verify format compliance)
-- [ ] T072 [US4] Add report command examples to README.md
+- [X] T065 [P] [US4] Add format flag to report command in internal/cli/report.go (--format=json|lcov|html)
+- [X] T066 [P] [US4] Add output flag to report command in internal/cli/report.go (-o, --output)
+- [X] T067 [US4] Implement format selection logic in internal/cli/report.go (route to appropriate reporter)
+- [X] T068 [US4] Add coverage file validation in internal/cli/report.go (check file exists, valid JSON)
+- [X] T069 [US4] Add output writing in internal/cli/report.go (stdout or file based on --output flag)
+- [X] T070 [US4] Create JSON output test in internal/report/json_test.go (verify schema compliance)
+- [X] T071 [US4] Create LCOV output test in internal/report/lcov_test.go (verify format compliance)
+- [X] T072 [US4] Create HTML output test in internal/report/html_test.go (verify format compliance)
 
 **Checkpoint**: All user stories should now be independently functional
 

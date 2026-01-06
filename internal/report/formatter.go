@@ -25,6 +25,7 @@ type FormatType string
 const (
 	FormatJSON FormatType = "json"
 	FormatLCOV FormatType = "lcov"
+	FormatHTML FormatType = "html"
 )
 
 // GetFormatter returns a formatter for the specified format type
@@ -34,8 +35,10 @@ func GetFormatter(format FormatType) (Formatter, error) {
 		return NewJSONReporter(), nil
 	case FormatLCOV:
 		return NewLCOVReporter(), nil
+	case FormatHTML:
+		return NewHTMLReporter(), nil
 	default:
-		return nil, fmt.Errorf("unsupported format: %s (supported: json, lcov)", format)
+		return nil, fmt.Errorf("unsupported format: %s (supported: json, lcov, html)", format)
 	}
 }
 
@@ -60,7 +63,7 @@ func FormatToString(cov *coverage.Coverage, format FormatType) (string, error) {
 // ValidFormat checks if a format string is valid
 func ValidFormat(format string) bool {
 	switch FormatType(format) {
-	case FormatJSON, FormatLCOV:
+	case FormatJSON, FormatLCOV, FormatHTML:
 		return true
 	default:
 		return false
@@ -69,5 +72,5 @@ func ValidFormat(format string) bool {
 
 // SupportedFormats returns a list of supported format names
 func SupportedFormats() []string {
-	return []string{string(FormatJSON), string(FormatLCOV)}
+	return []string{string(FormatJSON), string(FormatLCOV), string(FormatHTML)}
 }
