@@ -76,15 +76,15 @@ func ReportSummary(coverageFile string) error {
 
 	// Print per-file coverage
 	fmt.Println("File Coverage:")
-	for file, fileCov := range cov.Files {
+	for file, hits := range cov.Files {
 		covered := 0
-		for _, line := range fileCov.Lines {
-			if line.Covered {
+		for _, count := range hits {
+			if count > 0 {
 				covered++
 			}
 		}
-		total := len(fileCov.Lines)
-		percent := fileCov.LineCoveragePercent()
+		total := len(hits)
+		percent := cov.LineCoveragePercent(file)
 
 		fmt.Printf("  %s: %.2f%% (%d/%d lines)\n", file, percent, covered, total)
 	}

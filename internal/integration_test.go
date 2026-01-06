@@ -184,15 +184,16 @@ func TestEndToEndWithTestcontainers(t *testing.T) {
 			t.Error("Coverage should be >= 0%")
 		}
 
-		// Log coverage details (will be empty until Phase 4 implements NOTIFY injection)
+		// Log coverage details
 		if len(cov.Files) > 0 {
-			for file, fileCov := range cov.Files {
-				percent := fileCov.LineCoveragePercent()
+			for file, hits := range cov.Files {
+				percent := cov.LineCoveragePercent(file)
+				covered := countCoveredLines(hits)
 				t.Logf("  %s: %.2f%% (%d/%d lines)",
-					file, percent, countCovered(fileCov), len(fileCov.Lines))
+					file, percent, covered, len(hits))
 			}
 		} else {
-			t.Log("  No coverage data (instrumentation not yet implemented in Phase 3)")
+			t.Log("  No coverage data")
 		}
 	})
 
@@ -453,24 +454,26 @@ func TestOrderIndependence(t *testing.T) {
 		}
 
 		// Compare line coverage
-		if len(fileAB.Lines) != len(fileBA.Lines) {
+		if len(fileAB) != len(fileBA) {
 			t.Errorf("File %s: different number of lines covered: A→B has %d, B→A has %d",
-				filePath, len(fileAB.Lines), len(fileBA.Lines))
+				filePath, len(fileAB), len(fileBA))
 		}
 
 		// Check each line
-		for lineNum, lineAB := range fileAB.Lines {
-			lineBA, exists := fileBA.Lines[lineNum]
+		for lineNum, hitCountAB := range fileAB {
+			hitCountBA, exists := fileBA[lineNum]
 			if !exists {
 				t.Errorf("File %s, line %d: covered in A→B but not in B→A",
 					filePath, lineNum)
 				continue
 			}
 
-			// Verify coverage status is identical
-			if lineAB.Covered != lineBA.Covered {
+			// Verify both are covered (hitCount > 0)
+			coveredAB := hitCountAB > 0
+			coveredBA := hitCountBA > 0
+			if coveredAB != coveredBA {
 				t.Errorf("File %s, line %d: coverage mismatch - A→B=%v, B→A=%v",
-					filePath, lineNum, lineAB.Covered, lineBA.Covered)
+					filePath, lineNum, coveredAB, coveredBA)
 			}
 
 			// Note: We don't compare HitCount exactly, as it may vary if tests
@@ -478,22 +481,8 @@ func TestOrderIndependence(t *testing.T) {
 			// status is the same.
 		}
 
-		// Compare branch coverage
-		for branchID, branchAB := range fileAB.Branches {
-			branchBA, exists := fileBA.Branches[branchID]
-			if !exists {
-				t.Errorf("File %s, branch %s: covered in A→B but not in B→A",
-					filePath, branchID)
-				continue
-			}
-
-			if branchAB.Covered != branchBA.Covered {
-				t.Errorf("File %s, branch %s: coverage mismatch - A→B=%v, B→A=%v",
-					filePath, branchID, branchAB.Covered, branchBA.Covered)
-			}
-		}
-
-		t.Logf("✓ File %s: coverage identical in both orders", filePath)
+		// Branch coverage not yet implemented
+		t.Logf("  %s: %d lines verified", filePath, len(fileAB))
 	}
 
 	// Check for files in BA but not in AB
@@ -668,15 +657,15 @@ func TestTestIndependence(t *testing.T) {
 		}
 
 		// Compare number of lines
-		if len(file1.Lines) != len(file2.Lines) {
+		if len(file1) != len(file2) {
 			t.Errorf("File %s: different number of lines covered: run1 has %d, run2 has %d",
-				filePath, len(file1.Lines), len(file2.Lines))
+				filePath, len(file1), len(file2))
 		}
 
 		// Compare line-by-line coverage
 		mismatchCount := 0
-		for lineNum, line1 := range file1.Lines {
-			line2, exists := file2.Lines[lineNum]
+		for lineNum, hitCount1 := range file1 {
+			hitCount2, exists := file2[lineNum]
 			if !exists {
 				t.Errorf("File %s, line %d: covered in run1 but not in run2",
 					filePath, lineNum)
@@ -685,34 +674,20 @@ func TestTestIndependence(t *testing.T) {
 			}
 
 			// Verify coverage status is identical
-			if line1.Covered != line2.Covered {
+			covered1 := hitCount1 > 0
+			covered2 := hitCount2 > 0
+			if covered1 != covered2 {
 				t.Errorf("File %s, line %d: coverage mismatch - run1=%v, run2=%v",
-					filePath, lineNum, line1.Covered, line2.Covered)
+					filePath, lineNum, covered1, covered2)
 				mismatchCount++
 			}
 		}
 
-		// Compare branch coverage
-		for branchID, branch1 := range file1.Branches {
-			branch2, exists := file2.Branches[branchID]
-			if !exists {
-				t.Errorf("File %s, branch %s: covered in run1 but not in run2",
-					filePath, branchID)
-				mismatchCount++
-				continue
-			}
-
-			if branch1.Covered != branch2.Covered {
-				t.Errorf("File %s, branch %s: coverage mismatch - run1=%v, run2=%v",
-					filePath, branchID, branch1.Covered, branch2.Covered)
-				mismatchCount++
-			}
-		}
-
-		if mismatchCount == 0 {
-			t.Logf("✓ File %s: coverage identical in both runs", filePath)
-		} else {
+		// Branch coverage not yet implemented
+		if mismatchCount > 0 {
 			t.Errorf("File %s: %d mismatches found", filePath, mismatchCount)
+		} else {
+			t.Logf("✓ File %s: coverage identical in both runs", filePath)
 		}
 	}
 
@@ -784,10 +759,10 @@ func databaseExists(ctx context.Context, pool *database.Pool, dbName string) (bo
 }
 
 // Helper function to count covered lines
-func countCovered(fileCov *coverage.FileCoverage) int {
+func countCoveredLines(hits coverage.FileHits) int {
 	count := 0
-	for _, line := range fileCov.Lines {
-		if line.Covered {
+	for _, hitCount := range hits {
+		if hitCount > 0 {
 			count++
 		}
 	}

@@ -27,6 +27,13 @@ func ExtractStatements(sql string, result *pgquery.ParseResult) ([]*Statement, e
 		rawSQL := ""
 		if stmtLocation >= 0 && stmtLocation+stmtLen <= int32(len(sql)) {
 			rawSQL = sql[stmtLocation : stmtLocation+stmtLen]
+			
+			// pg_query_go doesn't include the trailing semicolon in stmtLen
+			// Check if there's a semicolon right after and include it
+			endPos := int(stmtLocation + stmtLen)
+			if endPos < len(sql) && sql[endPos] == ';' {
+				rawSQL += ";"
+			}
 		}
 
 		// Classify statement type

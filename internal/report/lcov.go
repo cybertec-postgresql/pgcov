@@ -38,7 +38,7 @@ func (r *LCOVReporter) Format(cov *coverage.Coverage, writer io.Writer) error {
 }
 
 // formatFile formats a single file's coverage in LCOV format
-func (r *LCOVReporter) formatFile(path string, fileCov *coverage.FileCoverage, writer io.Writer) error {
+func (r *LCOVReporter) formatFile(path string, hits coverage.FileHits, writer io.Writer) error {
 	// SF:<source file path>
 	if _, err := fmt.Fprintf(writer, "SF:%s\n", path); err != nil {
 		return err
@@ -46,78 +46,34 @@ func (r *LCOVReporter) formatFile(path string, fileCov *coverage.FileCoverage, w
 
 	// Sort line numbers for deterministic output
 	var lines []int
-	for line := range fileCov.Lines {
+	for line := range hits {
 		lines = append(lines, line)
 	}
 	sort.Ints(lines)
 
 	// DA:<line number>,<hit count>
 	for _, line := range lines {
-		lineCov := fileCov.Lines[line]
-		if _, err := fmt.Fprintf(writer, "DA:%d,%d\n", lineCov.LineNumber, lineCov.HitCount); err != nil {
+		hitCount := hits[line]
+		if _, err := fmt.Fprintf(writer, "DA:%d,%d\n", line, hitCount); err != nil {
 			return err
 		}
 	}
 
 	// LF:<number of instrumented lines>
-	linesFound := len(fileCov.Lines)
+	linesFound := len(hits)
 	if _, err := fmt.Fprintf(writer, "LF:%d\n", linesFound); err != nil {
 		return err
 	}
 
 	// LH:<number of lines with non-zero execution count>
 	linesHit := 0
-	for _, lineCov := range fileCov.Lines {
-		if lineCov.Covered {
+	for _, count := range hits {
+		if count > 0 {
 			linesHit++
 		}
 	}
 	if _, err := fmt.Fprintf(writer, "LH:%d\n", linesHit); err != nil {
 		return err
-	}
-
-	// Branch coverage (if available)
-	if len(fileCov.Branches) > 0 {
-		// Sort branch IDs
-		var branchIDs []string
-		for branchID := range fileCov.Branches {
-			branchIDs = append(branchIDs, branchID)
-		}
-		sort.Strings(branchIDs)
-
-		// BRDA:<line number>,<block number>,<branch number>,<taken count>
-		for _, branchID := range branchIDs {
-			branch := fileCov.Branches[branchID]
-			// Parse branch ID format: "line:branch_name"
-			var lineNum int
-			var branchName string
-			fmt.Sscanf(branchID, "%d:%s", &lineNum, &branchName)
-
-			taken := "-"
-			if branch.Covered {
-				taken = fmt.Sprintf("%d", branch.HitCount)
-			}
-
-			if _, err := fmt.Fprintf(writer, "BRDA:%d,0,0,%s\n", lineNum, taken); err != nil {
-				return err
-			}
-		}
-
-		// BRF:<number of branches found>
-		if _, err := fmt.Fprintf(writer, "BRF:%d\n", len(fileCov.Branches)); err != nil {
-			return err
-		}
-
-		// BRH:<number of branches hit>
-		branchesHit := 0
-		for _, branch := range fileCov.Branches {
-			if branch.Covered {
-				branchesHit++
-			}
-		}
-		if _, err := fmt.Fprintf(writer, "BRH:%d\n", branchesHit); err != nil {
-			return err
-		}
 	}
 
 	// end_of_record

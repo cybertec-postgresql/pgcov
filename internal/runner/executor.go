@@ -181,12 +181,26 @@ func (e *Executor) executeTestWorkflow(ctx context.Context, testRun *TestRun, so
 		_, err := conn.Exec(ctx, source.InstrumentedText)
 		if err != nil {
 			conn.Release()
+			if e.verbose {
+				fmt.Printf("[DEBUG] Failed to load source: %v\n", err)
+				fmt.Printf("[DEBUG] Instrumented SQL was:\n%s\n", source.InstrumentedText)
+			}
 			return fmt.Errorf("failed to load source %s: %w", source.Original.File.RelativePath, err)
+		}
+		
+		// For successfully loaded source files, mark all tracked locations as covered
+		// (DDL/DML statements are implicitly covered if they execute without error)
+		for _, loc := range source.Locations {
+			testRun.CoverageSigs = append(testRun.CoverageSigs, CoverageSignal{
+				SignalID:  loc.SignalID,
+				Timestamp: time.Now(),
+			})
 		}
 	}
 	conn.Release()
 	if e.verbose {
 		fmt.Println("[DEBUG] All sources loaded")
+		fmt.Printf("[DEBUG] Added %d implicit coverage signals from DDL/DML\n", len(testRun.CoverageSigs))
 	}
 
 	if e.verbose {
@@ -234,7 +248,8 @@ func (e *Executor) executeTestWorkflow(ctx context.Context, testRun *TestRun, so
 		fmt.Printf("[DEBUG] Collected %d signals\n", len(signals))
 	}
 
-	testRun.CoverageSigs = signals
+	// Append NOTIFY signals to the implicit coverage signals
+	testRun.CoverageSigs = append(testRun.CoverageSigs, signals...)
 
 	return nil
 }

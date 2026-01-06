@@ -52,11 +52,17 @@ func (r *JSONReporter) FormatSummary(cov *coverage.Coverage) (string, error) {
 	summary["total_coverage_percent"] = cov.TotalLineCoveragePercent()
 
 	files := make(map[string]interface{})
-	for path, fileCov := range cov.Files {
+	for path, hits := range cov.Files {
+		covered := 0
+		for _, count := range hits {
+			if count > 0 {
+				covered++
+			}
+		}
 		files[path] = map[string]interface{}{
-			"lines_covered":   countCovered(fileCov),
-			"lines_total":     len(fileCov.Lines),
-			"coverage_percent": fileCov.LineCoveragePercent(),
+			"lines_covered":    covered,
+			"lines_total":      len(hits),
+			"coverage_percent": cov.LineCoveragePercent(path),
 		}
 	}
 	summary["files"] = files
@@ -69,16 +75,6 @@ func (r *JSONReporter) FormatSummary(cov *coverage.Coverage) (string, error) {
 	return string(data), nil
 }
 
-// countCovered counts the number of covered lines in a file
-func countCovered(fileCov *coverage.FileCoverage) int {
-	count := 0
-	for _, line := range fileCov.Lines {
-		if line.Covered {
-			count++
-		}
-	}
-	return count
-}
 
 // Name returns the name of this reporter
 func (r *JSONReporter) Name() string {

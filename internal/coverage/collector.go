@@ -47,31 +47,18 @@ func (c *Collector) AddSignal(signal runner.CoverageSignal) error {
 		return fmt.Errorf("invalid signal ID: %w", err)
 	}
 
-	// Get or create file coverage
-	fileCov, exists := c.coverage.Files[file]
-	if !exists {
-		fileCov = NewFileCoverage(file)
-		c.coverage.Files[file] = fileCov
-	}
-
 	// Add line or branch coverage
 	if branch == "" {
-		// Line coverage
-		if existingLine, exists := fileCov.Lines[line]; exists {
-			existingLine.HitCount++
-			existingLine.Covered = true
+		// Line coverage - increment hit count
+		if existingCount, exists := c.coverage.Files[file][line]; exists {
+			c.coverage.AddLine(file, line, existingCount+1)
 		} else {
-			fileCov.AddLine(line, 1)
+			c.coverage.AddLine(file, line, 1)
 		}
 	} else {
-		// Branch coverage
+		// Branch coverage (placeholder for future)
 		branchKey := fmt.Sprintf("%d:%s", line, branch)
-		if existingBranch, exists := fileCov.Branches[branchKey]; exists {
-			existingBranch.HitCount++
-			existingBranch.Covered = true
-		} else {
-			fileCov.AddBranch(branchKey, 1)
-		}
+		c.coverage.AddBranch(file, branchKey, 1)
 	}
 
 	return nil
@@ -89,40 +76,21 @@ func (c *Collector) Reset() {
 
 // Merge merges another coverage collector's data into this one
 func (c *Collector) Merge(other *Collector) error {
-	for file, otherFileCov := range other.coverage.Files {
-		fileCov, exists := c.coverage.Files[file]
-		if !exists {
-			// Deep copy the file coverage
-			fileCov = NewFileCoverage(file)
-			c.coverage.Files[file] = fileCov
-		}
-
-		// Merge lines
-		for line, otherLine := range otherFileCov.Lines {
-			if existingLine, exists := fileCov.Lines[line]; exists {
-				existingLine.HitCount += otherLine.HitCount
-				existingLine.Covered = existingLine.HitCount > 0
+	for file, otherHits := range other.coverage.Files {
+		// Merge line hit counts
+		for line, count := range otherHits {
+			if existingCount, exists := c.coverage.Files[file][line]; exists {
+				c.coverage.AddLine(file, line, existingCount+count)
 			} else {
-				fileCov.AddLine(line, otherLine.HitCount)
-			}
-		}
-
-		// Merge branches
-		for branchID, otherBranch := range otherFileCov.Branches {
-			if existingBranch, exists := fileCov.Branches[branchID]; exists {
-				existingBranch.HitCount += otherBranch.HitCount
-				existingBranch.Covered = existingBranch.HitCount > 0
-			} else {
-				fileCov.AddBranch(branchID, otherBranch.HitCount)
+				c.coverage.AddLine(file, line, count)
 			}
 		}
 	}
-
 	return nil
 }
 
-// GetFileCoverage returns coverage data for a specific file
-func (c *Collector) GetFileCoverage(filePath string) *FileCoverage {
+// GetFileCoverage returns coverage data for a specific file (simplified)
+func (c *Collector) GetFileCoverage(filePath string) FileHits {
 	return c.coverage.Files[filePath]
 }
 
