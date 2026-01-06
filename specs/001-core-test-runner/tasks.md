@@ -156,14 +156,14 @@ Single Go project: `internal/`, `cmd/`, `testdata/` at repository root
 
 ### Implementation for User Story 3
 
-- [ ] T057 [P] [US3] Add connection flags to run command in internal/cli/run.go (--host, --port, --user, --password, --database)
-- [ ] T058 [P] [US3] Add execution flags to run command in internal/cli/run.go (--timeout, --parallel, --coverage-file, --verbose)
-- [ ] T059 [US3] Implement configuration priority logic in internal/cli/config.go (flags override env vars override defaults)
-- [ ] T060 [US3] Add environment variable binding in internal/cli/config.go (PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE)
-- [ ] T061 [US3] Add configuration validation in internal/cli/config.go (check required fields, validate formats)
-- [ ] T062 [US3] Add helpful error messages in internal/cli/config.go (suggest fixes for missing/invalid configuration)
-- [ ] T063 [US3] Create configuration test in internal/cli/config_test.go (verify priority order and defaults)
-- [ ] T064 [US3] Document all configuration options in README.md
+- [X] T057 [P] [US3] Add connection string flag to run command in internal/cli/run.go (--database)
+- [X] T058 [P] [US3] Add execution flags to run command in internal/cli/run.go (--timeout, --parallel, --coverage-file, --verbose)
+- [X] T059 [US3] Implement configuration priority logic in internal/cli/config.go (flags override env vars override defaults)
+- [X] T060 [US3] Add integration tests using testcontainer/postgres and validate
+- [X] T061 [US3] Add configuration validation in internal/cli/config.go (check required fields, validate formats)
+- [X] T062 [US3] Add helpful error messages in internal/cli/config.go (suggest fixes for missing/invalid configuration)
+- [X] T063 [US3] Create configuration test in internal/cli/config_test.go (verify priority order and defaults)
+- [X] T064 [US3] Document all configuration options in README.md
 
 **Checkpoint**: At this point, User Stories 1, 2, AND 3 should all work independently
 

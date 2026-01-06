@@ -62,7 +62,17 @@ go build -o pgcov ./cmd/pgcov
 go install ./cmd/pgcov
 ```
 
-**Windows (PowerShell)**:
+**Windows (PowerShell) - Quick Build**:
+```powershell
+# Clone repository
+git clone https://github.com/pashagolub/pgcov.git
+cd pgcov
+
+# Use the build script (handles CGO automatically)
+.\build.ps1
+```
+
+**Windows (PowerShell) - Manual Build**:
 ```powershell
 # Clone repository
 git clone https://github.com/pashagolub/pgcov.git
@@ -164,14 +174,14 @@ pgcov --version
 
 **Connection**:
 - `--host`: PostgreSQL host (default: `localhost`)
-- `--port`: PostgreSQL port (default: `5432`)
+- `--port`: PostgreSQL port (default: `5432`, valid range: 1-65535)
 - `--user`: PostgreSQL user (default: current user)
 - `--password`: PostgreSQL password
 - `--database`: Template database (default: `postgres`)
 
 **Execution**:
-- `--timeout`: Per-test timeout (default: `30s`)
-- `--parallel`: Concurrent tests (default: `1`)
+- `--timeout`: Per-test timeout (default: `30s`, format: `10s`, `1m`, `90s`)
+- `--parallel`: Concurrent tests (default: `1`, valid range: 1-100)
 - `--verbose`: Enable debug output
 
 **Output**:
@@ -182,7 +192,36 @@ pgcov --version
 pgcov respects standard PostgreSQL environment variables:
 - `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`
 
-Command-line flags override environment variables.
+**Configuration Priority** (highest to lowest):
+1. Command-line flags (e.g., `--host`)
+2. Environment variables (e.g., `PGHOST`)
+3. Default values
+
+### Configuration Validation
+
+pgcov validates all configuration values and provides helpful error messages:
+
+```bash
+# Invalid port
+$ pgcov run --port=99999 .
+Error: configuration error for port: invalid port number: 99999
+
+Suggestion: Port must be between 1 and 65535. Default PostgreSQL port is 5432.
+Set via --port flag or PGPORT environment variable.
+
+# Invalid parallelism
+$ pgcov run --parallel=0 .
+Error: configuration error for parallel: parallelism must be at least 1, got: 0
+
+Suggestion: Use --parallel=N where N is number of tests to run concurrently.
+Use 1 for sequential execution.
+
+# Invalid timeout
+$ pgcov run --timeout=-5s .
+Error: configuration error for timeout: timeout must be positive
+
+Suggestion: Use --timeout flag with format like '30s', '1m', '90s'. Default is 30s.
+```
 
 ## Writing Tests
 
@@ -314,7 +353,25 @@ go test -timeout 5m ./...
 go test -cover ./...
 ```
 
-**Windows (PowerShell)**:
+**Windows (PowerShell) - Quick Test**:
+```powershell
+# Use the test script (handles CGO automatically)
+.\test.ps1
+
+# Run with verbose output
+.\test.ps1 -Verbose
+
+# Run specific tests
+.\test.ps1 -Run "TestConfig" -Verbose
+
+# Run short tests only (skips integration tests)
+.\test.ps1 -Short
+
+# Run specific package
+.\test.ps1 -Package ".\internal\cli\..." -Verbose
+```
+
+**Windows (PowerShell) - Manual**:
 ```powershell
 # Enable CGO and set compiler
 $env:CGO_ENABLED = "1"

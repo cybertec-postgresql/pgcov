@@ -11,6 +11,9 @@ import (
 // Config is an alias for the shared Config type
 type Config = types.Config
 
+// ConfigError is an alias for the shared ConfigError type
+type ConfigError = types.ConfigError
+
 // DefaultConfig provides default configuration values
 var DefaultConfig = Config{
 	PGHost:       "localhost",

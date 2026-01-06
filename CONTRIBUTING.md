@@ -22,6 +22,7 @@ Thank you for your interest in contributing to pgcov! This document provides gui
 2. **C Compiler** (required for CGO)
 
    **Linux**:
+
    ```bash
    # Ubuntu/Debian
    sudo apt-get install build-essential
@@ -34,6 +35,7 @@ Thank you for your interest in contributing to pgcov! This document provides gui
    ```
 
    **macOS**:
+
    ```bash
    # Install Xcode Command Line Tools
    xcode-select --install
@@ -42,10 +44,12 @@ Thank you for your interest in contributing to pgcov! This document provides gui
    **Windows**:
    - Download and install [MSYS2](https://www.msys2.org/)
    - Open MSYS2 terminal:
+
      ```bash
      pacman -Syu
      pacman -S mingw-w64-x86_64-gcc
      ```
+
    - Add `C:\msys64\mingw64\bin` to your system PATH
 
 3. **Docker** (for integration tests)
@@ -112,6 +116,7 @@ go build -ldflags="-s -w" -o pgcov.exe .\cmd\pgcov
 Create a build script for convenience:
 
 **Linux/macOS** (`build.sh`):
+
 ```bash
 #!/bin/bash
 set -e
@@ -123,6 +128,7 @@ echo "Build complete: $(./pgcov --version)"
 ```
 
 **Windows** (`build.ps1`):
+
 ```powershell
 $ErrorActionPreference = "Stop"
 
@@ -154,6 +160,7 @@ go test .\...
 ### Comprehensive Testing
 
 **Linux/macOS**:
+
 ```bash
 # Enable CGO
 export CGO_ENABLED=1
@@ -183,6 +190,7 @@ go test ./...
 ```
 
 **Windows (PowerShell)**:
+
 ```powershell
 # Enable CGO
 $env:CGO_ENABLED = "1"
@@ -222,6 +230,7 @@ go test .\...
 Integration tests use [testcontainers-go](https://golang.testcontainers.org/) to spin up a real PostgreSQL instance:
 
 1. **Docker must be running**
+
    ```bash
    docker ps  # Should not error
    ```
@@ -307,11 +316,13 @@ staticcheck ./...
 ### Before Submitting
 
 1. **Ensure all tests pass**
+
    ```bash
    go test ./...
    ```
 
 2. **Format your code**
+
    ```bash
    go fmt ./...
    go vet ./...
@@ -323,6 +334,7 @@ staticcheck ./...
    - Update CHANGELOG.md (if exists)
 
 4. **Test your changes manually**
+
    ```bash
    # Build and test the binary
    go build -o pgcov ./cmd/pgcov
@@ -332,6 +344,7 @@ staticcheck ./...
 ### Pull Request Process
 
 1. **Create a feature branch**
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -341,6 +354,7 @@ staticcheck ./...
    - Write clear commit messages
 
 3. **Push to your fork**
+
    ```bash
    git push origin feature/your-feature-name
    ```
@@ -359,6 +373,7 @@ staticcheck ./...
 ### CGO Build Errors
 
 **Error: `gcc: command not found`**
+
 ```bash
 # Linux
 sudo apt-get install build-essential
@@ -370,12 +385,14 @@ xcode-select --install
 ```
 
 **Error: `cannot find -lpthread`**
+
 ```bash
 # Linux - install development libraries
 sudo apt-get install build-essential
 ```
 
 **Windows: Missing DLL errors**
+
 ```powershell
 # Add MinGW bin to PATH
 $env:PATH = "$env:PATH;C:\msys64\mingw64\bin"
@@ -386,6 +403,7 @@ $env:PATH = "$env:PATH;C:\msys64\mingw64\bin"
 ### Test Failures
 
 **Integration test fails: "Cannot connect to Docker"**
+
 ```bash
 # Verify Docker is running
 docker ps
@@ -396,6 +414,7 @@ sudo usermod -aG docker $USER
 ```
 
 **Integration test fails: "Failed to pull image"**
+
 ```bash
 # Pull images manually
 docker pull postgres:16-alpine
@@ -403,6 +422,7 @@ docker pull testcontainers/ryuk:0.13.0
 ```
 
 **Test timeout**
+
 ```bash
 # Increase timeout
 go test -timeout 10m ./...
@@ -411,6 +431,7 @@ go test -timeout 10m ./...
 ### Import Errors
 
 **Error: `package github.com/pganalyze/pg_query_go/v6: cannot find package`**
+
 ```bash
 # Download missing dependencies
 go mod download
