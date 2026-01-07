@@ -10,9 +10,6 @@ import (
 func ExtractStatements(sql string, result *pgquery.ParseResult) ([]*Statement, error) {
 	var statements []*Statement
 
-	// Split SQL into lines for line number calculation
-	lines := strings.Split(sql, "\n")
-
 	// Process each statement in the parse result
 	for _, stmt := range result.Stmts {
 		// Get statement location from pg_query_go
@@ -47,16 +44,8 @@ func ExtractStatements(sql string, result *pgquery.ParseResult) ([]*Statement, e
 		})
 	}
 
-	// If no statements were extracted but we have lines, try to create a single statement
-	if len(statements) == 0 && len(lines) > 0 {
-		statements = append(statements, &Statement{
-			RawSQL:    sql,
-			StartLine: 1,
-			EndLine:   len(lines),
-			Type:      StmtOther,
-		})
-	}
-
+	// If no statements were extracted, return empty slice
+	// Don't create a dummy statement for empty files or comment-only files
 	return statements, nil
 }
 

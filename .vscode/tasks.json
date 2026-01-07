@@ -27,97 +27,34 @@
             "problemMatcher": ["$go"]
         },
         {
-            "label": "Build pgcov (Release)",
+            "label": "Unit Test",
             "type": "shell",
-            "command": "go",
-            "args": [
-                "build",
-                "-ldflags=-s -w",
-                "./cmd/pgcov"
+            "command": "go test -failfast -p 1 -timeout=300s -parallel=1 .${pathSeparator}${relativeFileDirname}${pathSeparator}... -coverprofile='coverage.out' -json | tparse -all -progress",
+            "problemMatcher": [
+                "$go"
             ],
-            "options": {
-                "env": {
-                    "CGO_ENABLED": "1"
-                }
-            },
-            "group": "build",
-            "presentation": {
-                "reveal": "always",
-                "panel": "shared"
-            },
-            "problemMatcher": ["$go"]
-        },
-        {
-            "label": "Test All",
-            "type": "shell",
-            "command": "go",
-            "args": [
-                "test",
-                "-v",
-                "./..."
-            ],
-            "options": {
-                "env": {
-                    "CGO_ENABLED": "1"
-                }
-            },
             "group": {
-                "kind": "test",
+                "kind": "build",
                 "isDefault": true
             },
             "presentation": {
                 "reveal": "always",
-                "panel": "shared"
-            },
-            "problemMatcher": ["$go"]
+                "echo": true,
+                "focus": true
+            }
         },
         {
-            "label": "Test with Coverage",
+            "label": "Coverage Report",
             "type": "shell",
-            "command": "go",
-            "args": [
-                "test",
-                "-v",
-                "-cover",
-                "-coverprofile=coverage.out",
-                "./..."
+            "command": "go tool cover -html='coverage.out'",
+            "problemMatcher": [
+                "$go"
             ],
-            "options": {
-                "env": {
-                    "CGO_ENABLED": "1"
-                }
-            },
             "group": "test",
             "presentation": {
                 "reveal": "always",
-                "panel": "shared"
-            },
-            "problemMatcher": ["$go"]
-        },
-        {
-            "label": "Integration Test",
-            "type": "shell",
-            "command": "go",
-            "args": [
-                "test",
-                "-v",
-                "-timeout",
-                "5m",
-                "./internal",
-                "-run",
-                "TestEndToEndWithTestcontainers"
-            ],
-            "options": {
-                "env": {
-                    "CGO_ENABLED": "1"
-                }
-            },
-            "group": "test",
-            "presentation": {
-                "reveal": "always",
-                "panel": "shared"
-            },
-            "problemMatcher": ["$go"]
+                "panel": "new"
+            }
         },
         {
             "label": "Run pgcov",

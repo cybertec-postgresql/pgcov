@@ -1,0 +1,96 @@
+name: pgcov Coverage
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test-and-coverage:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build pgcov
+        run: go build -o pgcov ./cmd/pgcov
+
+      - name: Run tests with coverage
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: postgres
+        run: |
+          ./pgcov run ./... --coverage-file=coverage.json
+
+      - name: Generate LCOV report
+        run: |
+          ./pgcov report --format=lcov -o coverage.lcov
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.lcov
+          flags: sql-tests
+          name: pgcov-coverage
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.json
+            coverage.lcov
+
+      - name: Comment coverage on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const coverage = JSON.parse(fs.readFileSync('coverage.json', 'utf8'));
+            
+            const totalLines = Object.values(coverage.files || {}).reduce((sum, file) => {
+              return sum + Object.keys(file.lines || {}).length;
+            }, 0);
+            
+            const coveredLines = Object.values(coverage.files || {}).reduce((sum, file) => {
+              return sum + Object.values(file.lines || {}).filter(hits => hits > 0).length;
+            }, 0);
+            
+            const percent = totalLines > 0 ? (coveredLines / totalLines * 100).toFixed(2) : 0;
+            
+            const comment = `## SQL Coverage Report\n\n` +
+              `- **Coverage**: ${percent}%\n` +
+              `- **Lines covered**: ${coveredLines}/${totalLines}\n` +
+              `- **Files**: ${Object.keys(coverage.files || {}).length}\n`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

@@ -1,0 +1,75 @@
+image: golang:1.21
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+
+variables:
+  PGHOST: postgres
+  PGPORT: "5432"
+  PGUSER: postgres
+  PGPASSWORD: postgres
+  PGDATABASE: postgres
+
+stages:
+  - build
+  - test
+  - coverage
+
+build:
+  stage: build
+  script:
+    - go build -o pgcov ./cmd/pgcov
+  artifacts:
+    paths:
+      - pgcov
+    expire_in: 1 hour
+
+test:
+  stage: test
+  dependencies:
+    - build
+  script:
+    # Wait for PostgreSQL to be ready
+    - apt-get update && apt-get install -y postgresql-client
+    - until pg_isready -h postgres; do sleep 1; done
+    
+    # Run tests with coverage
+    - ./pgcov run ./... --coverage-file=coverage.json --verbose
+  artifacts:
+    paths:
+      - coverage.json
+    expire_in: 1 week
+
+coverage:
+  stage: coverage
+  dependencies:
+    - test
+  script:
+    # Generate LCOV report
+    - ./pgcov report --format=lcov -o coverage.lcov
+    
+    # Generate HTML report (optional, requires genhtml)
+    # - apt-get update && apt-get install -y lcov
+    # - genhtml coverage.lcov -o coverage_html
+    
+    # Parse coverage percentage
+    - |
+      COVERAGE_PERCENT=$(./pgcov report --format=json | jq -r '.coverage.total.percent')
+      echo "SQL Coverage: $COVERAGE_PERCENT%"
+      
+      # Fail if coverage is below threshold
+      THRESHOLD=80
+      if (( $(echo "$COVERAGE_PERCENT < $THRESHOLD" | bc -l) )); then
+        echo "Coverage $COVERAGE_PERCENT% is below threshold $THRESHOLD%"
+        exit 1
+      fi
+  coverage: '/SQL Coverage: (\d+\.\d+)%/'
+  artifacts:
+    paths:
+      - coverage.lcov
+      # - coverage_html
+    expire_in: 1 month
