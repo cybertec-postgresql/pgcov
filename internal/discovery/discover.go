@@ -27,6 +27,12 @@ func Discover(rootPath string) ([]DiscoveredFile, error) {
 		return nil, fmt.Errorf("path is not a directory: %s", absRoot)
 	}
 
+	// Get current working directory to make paths relative to it
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current directory: %w", err)
+	}
+
 	var files []DiscoveredFile
 
 	err = filepath.Walk(absRoot, func(path string, info os.FileInfo, err error) error {
@@ -48,7 +54,8 @@ func Discover(rootPath string) ([]DiscoveredFile, error) {
 			return nil
 		}
 
-		relPath, err := filepath.Rel(absRoot, path)
+		// Make path relative to current working directory for consistency
+		relPath, err := filepath.Rel(cwd, path)
 		if err != nil {
 			return fmt.Errorf("failed to get relative path: %w", err)
 		}
