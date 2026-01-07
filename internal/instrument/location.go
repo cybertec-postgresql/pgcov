@@ -39,11 +39,11 @@ func BranchLocationKey(file string, line int, branch string) string {
 func ParseSignalID(signalID string) (file string, line int, branch string, err error) {
 	// Signal format: file:line or file:line:branch
 	// Note: file path may contain colons on Windows (C:\path\to\file.sql)
-	
+
 	// Find the last two colons
 	lastColon := -1
 	secondLastColon := -1
-	
+
 	for i := len(signalID) - 1; i >= 0; i-- {
 		if signalID[i] == ':' {
 			if lastColon == -1 {
@@ -54,18 +54,18 @@ func ParseSignalID(signalID string) (file string, line int, branch string, err e
 			}
 		}
 	}
-	
+
 	if lastColon == -1 {
 		return "", 0, "", fmt.Errorf("invalid signal ID format: %s", signalID)
 	}
-	
+
 	// Check if there's a branch (three parts)
 	if secondLastColon != -1 {
 		// Format: file:line:branch
 		file = signalID[:secondLastColon]
 		lineStr := signalID[secondLastColon+1 : lastColon]
 		branch = signalID[lastColon+1:]
-		
+
 		var parseErr error
 		line, parseErr = parseLineNumber(lineStr)
 		if parseErr != nil {
@@ -75,14 +75,14 @@ func ParseSignalID(signalID string) (file string, line int, branch string, err e
 		// Format: file:line
 		file = signalID[:lastColon]
 		lineStr := signalID[lastColon+1:]
-		
+
 		var parseErr error
 		line, parseErr = parseLineNumber(lineStr)
 		if parseErr != nil {
 			return "", 0, "", fmt.Errorf("invalid line number in signal ID %s: %w", signalID, parseErr)
 		}
 	}
-	
+
 	return file, line, branch, nil
 }
 
@@ -114,7 +114,7 @@ func GetUniqueFiles(locations []CoveragePoint) []string {
 	for _, loc := range locations {
 		fileSet[loc.File] = true
 	}
-	
+
 	var files []string
 	for file := range fileSet {
 		files = append(files, file)

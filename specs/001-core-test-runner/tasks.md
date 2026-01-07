@@ -198,13 +198,13 @@ Single Go project: `internal/`, `cmd/`, `testdata/` at repository root
 
 ### Implementation for Parallel Execution
 
-- [ ] T073 [P] Implement goroutine pool in internal/runner/parallel.go (worker pool pattern with semaphore)
-- [ ] T074 [P] Implement thread-safe coverage aggregation in internal/coverage/collector.go (use sync.Mutex or channels)
-- [ ] T075 Add parallel execution coordinator in internal/runner/parallel.go (distribute tests to workers)
-- [ ] T076 Add connection pool sizing in internal/database/pool.go (ensure pool size ≥ parallel limit)
-- [ ] T077 Wire parallel flag to executor in internal/cli/run.go (sequential if --parallel=1)
-- [ ] T078 Create parallel execution test in internal/integration_test.go (verify coverage accuracy with parallel execution)
-- [ ] T079 Create parallel test fixtures in testdata/parallel/ (multiple independent tests)
+- [X] T073 [P] Implement goroutine pool in internal/runner/parallel.go (worker pool pattern with semaphore)
+- [X] T074 [P] Implement thread-safe coverage aggregation in internal/coverage/collector.go (use sync.Mutex or channels)
+- [X] T075 Add parallel execution coordinator in internal/runner/parallel.go (distribute tests to workers)
+- [X] T076 Add connection pool sizing in internal/database/pool.go (ensure pool size ≥ parallel limit)
+- [X] T077 Wire parallel flag to executor in internal/cli/run.go (sequential if --parallel=1)
+- [X] T078 Create parallel execution test in internal/integration_test.go (verify coverage accuracy with parallel execution)
+- [X] T079 Create parallel test fixtures in testdata/parallel/ (multiple independent tests)
 
 ---
 

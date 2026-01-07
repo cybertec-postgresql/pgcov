@@ -12,12 +12,12 @@ import (
 
 // Listener handles PostgreSQL LISTEN/NOTIFY for coverage signals
 type Listener struct {
-	conn         *pgx.Conn
-	channel      string
-	signals      chan types.CoverageSignal
-	errors       chan error
-	done         chan struct{}
-	connString   string
+	conn       *pgx.Conn
+	channel    string
+	signals    chan types.CoverageSignal
+	errors     chan error
+	done       chan struct{}
+	connString string
 }
 
 // NewListener creates a new LISTEN/NOTIFY listener

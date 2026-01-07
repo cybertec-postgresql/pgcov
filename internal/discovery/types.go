@@ -15,7 +15,7 @@ type FileType int
 
 const (
 	FileTypeTest   FileType = iota // Matches *_test.sql
-	FileTypeSource                  // Does not match *_test.sql
+	FileTypeSource                 // Does not match *_test.sql
 )
 
 // String returns a string representation of FileType

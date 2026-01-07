@@ -73,9 +73,25 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 		fmt.Printf("Connected to PostgreSQL at %s:%d\n", config.PGHost, config.PGPort)
 	}
 
-	// Step 6: Execute tests
+	// Step 6: Execute tests (parallel or sequential based on config)
 	executor := runner.NewExecutor(pool, config.Timeout, config.Verbose)
-	testRuns, err := executor.ExecuteBatch(ctx, testFiles, instrumentedSources)
+
+	var testRuns []*runner.TestRun
+	if config.Parallelism > 1 {
+		// Use parallel execution
+		if config.Verbose {
+			fmt.Printf("Executing tests in parallel (workers: %d)\n", config.Parallelism)
+		}
+		workerPool := runner.NewWorkerPool(executor, config.Parallelism, config.Verbose)
+		testRuns, err = workerPool.ExecuteParallel(ctx, testFiles, instrumentedSources)
+	} else {
+		// Use sequential execution
+		if config.Verbose {
+			fmt.Println("Executing tests sequentially")
+		}
+		testRuns, err = executor.ExecuteBatch(ctx, testFiles, instrumentedSources)
+	}
+
 	if err != nil {
 		return 1, fmt.Errorf("test execution failed: %w", err)
 	}

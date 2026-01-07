@@ -18,7 +18,7 @@ import (
 type HTMLReporter struct{}
 
 // NewHTMLReporter creates a new HTML reporter
-func  NewHTMLReporter() *HTMLReporter {
+func NewHTMLReporter() *HTMLReporter {
 	return &HTMLReporter{}
 }
 
@@ -171,12 +171,12 @@ func (r *HTMLReporter) writeFileDetailWithSource(file string, cov *coverage.Cove
 		for lineNum := 1; lineNum <= len(sourceLines); lineNum++ {
 			lineContent := sourceLines[lineNum]
 			hitCount, hasCoverage := hits[lineNum]
-			
+
 			if hasCoverage {
 				// Escape HTML and apply coverage coloring
 				escapedContent := html.EscapeString(lineContent)
 				covClass := r.getCoverageClass(hitCount)
-				
+
 				// Write the span with newline at end
 				_, err = fmt.Fprintf(writer, `<span class="%s" title="%d">%s</span>
 `, covClass, hitCount, escapedContent)

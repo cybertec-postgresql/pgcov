@@ -75,7 +75,6 @@ func (r *JSONReporter) FormatSummary(cov *coverage.Coverage) (string, error) {
 	return string(data), nil
 }
 
-
 // Name returns the name of this reporter
 func (r *JSONReporter) Name() string {
 	return "json"

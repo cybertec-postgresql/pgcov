@@ -249,8 +249,8 @@ func TestConfigValidate_InvalidParallelism(t *testing.T) {
 
 func TestConfigValidate_EmptyRequiredFields(t *testing.T) {
 	tests := []struct {
-		name         string
-		modifyConfig func(*Config)
+		name          string
+		modifyConfig  func(*Config)
 		expectedField string
 	}{
 		{

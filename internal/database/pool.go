@@ -25,9 +25,9 @@ func NewPool(ctx context.Context, config *types.Config) (*Pool, error) {
 	poolConfig, err := pgxpool.ParseConfig(connString)
 	if err != nil {
 		return nil, &errors.ConnectionError{
-			Host:    config.PGHost,
-			Port:    config.PGPort,
-			Message: fmt.Sprintf("invalid connection configuration: %v", err),
+			Host:       config.PGHost,
+			Port:       config.PGPort,
+			Message:    fmt.Sprintf("invalid connection configuration: %v", err),
 			Suggestion: "Check your PostgreSQL connection settings (host, port, user, password)",
 		}
 	}
@@ -44,9 +44,9 @@ func NewPool(ctx context.Context, config *types.Config) (*Pool, error) {
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return nil, &errors.ConnectionError{
-			Host:    config.PGHost,
-			Port:    config.PGPort,
-			Message: fmt.Sprintf("failed to create connection pool: %v", err),
+			Host:       config.PGHost,
+			Port:       config.PGPort,
+			Message:    fmt.Sprintf("failed to create connection pool: %v", err),
 			Suggestion: "Verify PostgreSQL is running and accessible at the specified host and port",
 		}
 	}
@@ -67,7 +67,7 @@ func NewPool(ctx context.Context, config *types.Config) (*Pool, error) {
 	var versionStr string
 	err = conn.QueryRow(ctx, "SHOW server_version_num").Scan(&versionStr)
 	conn.Release() // Release immediately after use
-	
+
 	if err != nil {
 		pool.Close()
 		return nil, &errors.ConnectionError{
@@ -76,7 +76,7 @@ func NewPool(ctx context.Context, config *types.Config) (*Pool, error) {
 			Message: fmt.Sprintf("failed to query PostgreSQL version: %v", err),
 		}
 	}
-	
+
 	version, err := strconv.Atoi(versionStr)
 	if err != nil {
 		pool.Close()
@@ -91,9 +91,9 @@ func NewPool(ctx context.Context, config *types.Config) (*Pool, error) {
 	if version < 130000 {
 		pool.Close()
 		return nil, &errors.ConnectionError{
-			Host:    config.PGHost,
-			Port:    config.PGPort,
-			Message: fmt.Sprintf("PostgreSQL version %d is not supported (need 13+)", version/10000),
+			Host:       config.PGHost,
+			Port:       config.PGPort,
+			Message:    fmt.Sprintf("PostgreSQL version %d is not supported (need 13+)", version/10000),
 			Suggestion: "Upgrade to PostgreSQL 13 or later",
 		}
 	}

@@ -4,8 +4,8 @@ import "time"
 
 // Coverage represents aggregated coverage data across all tests
 type Coverage struct {
-	Version   string             // Schema version (e.g., "1.0")
-	Timestamp time.Time          // When coverage collected
+	Version   string              // Schema version (e.g., "1.0")
+	Timestamp time.Time           // When coverage collected
 	Files     map[string]FileHits // Key: relative file path, Value: map of line numbers to hit counts
 }
 
@@ -14,9 +14,9 @@ type FileHits map[int]int // Key: line number, Value: hit count
 
 // FileCoverage represents coverage data for a single source file (for compatibility)
 type FileCoverage struct {
-	Path     string                      // Relative file path
-	Lines    map[int]*LineCoverage       // Key: line number
-	Branches map[string]*BranchCoverage  // Key: branch identifier
+	Path     string                     // Relative file path
+	Lines    map[int]*LineCoverage      // Key: line number
+	Branches map[string]*BranchCoverage // Key: branch identifier
 }
 
 // LineCoverage represents coverage data for a single line (for compatibility)
@@ -70,14 +70,14 @@ func (c *Coverage) LineCoveragePercent(file string) float64 {
 	if len(hits) == 0 {
 		return 0.0
 	}
-	
+
 	covered := 0
 	for _, count := range hits {
 		if count > 0 {
 			covered++
 		}
 	}
-	
+
 	return float64(covered) / float64(len(hits)) * 100.0
 }
 
@@ -85,7 +85,7 @@ func (c *Coverage) LineCoveragePercent(file string) float64 {
 func (c *Coverage) TotalLineCoveragePercent() float64 {
 	totalLines := 0
 	coveredLines := 0
-	
+
 	for _, hits := range c.Files {
 		for _, count := range hits {
 			totalLines++
@@ -94,10 +94,10 @@ func (c *Coverage) TotalLineCoveragePercent() float64 {
 			}
 		}
 	}
-	
+
 	if totalLines == 0 {
 		return 0.0
 	}
-	
+
 	return float64(coveredLines) / float64(totalLines) * 100.0
 }

@@ -25,11 +25,11 @@ func ValidateSignalID(signalID string) error {
 	if err != nil {
 		return fmt.Errorf("invalid signal ID: %w", err)
 	}
-	
+
 	if line < 1 {
 		return fmt.Errorf("signal ID has invalid line number: %d", line)
 	}
-	
+
 	return nil
 }
 

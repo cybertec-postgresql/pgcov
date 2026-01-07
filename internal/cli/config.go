@@ -82,4 +82,3 @@ func ApplyFlagsToConfig(c *Config, host string, port int, user, password, databa
 	}
 	c.Verbose = verbose
 }
-

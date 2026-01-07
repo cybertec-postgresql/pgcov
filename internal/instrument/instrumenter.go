@@ -73,23 +73,23 @@ func InstrumentWithNotify(parsed *parser.ParsedSQL) (*InstrumentedSQL, error) {
 // instrumentStatement instruments a single statement with line-by-line coverage
 func instrumentStatement(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
 	var locations []CoveragePoint
-	
+
 	// For PL/pgSQL functions, instrument each line
 	if stmt.Type == parser.StmtFunction && strings.Contains(strings.ToUpper(stmt.RawSQL), "LANGUAGE PLPGSQL") {
 		instrumented, locs := instrumentPlpgsqlFunction(stmt, filePath)
 		return instrumented, locs
 	}
-	
+
 	// For SQL functions (LANGUAGE SQL), instrument the statement
 	if stmt.Type == parser.StmtFunction && strings.Contains(strings.ToUpper(stmt.RawSQL), "LANGUAGE SQL") {
 		instrumented, locs := instrumentSQLFunction(stmt, filePath)
 		return instrumented, locs
 	}
-	
+
 	// For non-function statements (DDL, DML), mark all non-comment lines as covered
 	// These will be automatically marked as covered if the file executes without errors
 	locations = markStatementLinesAsCovered(stmt, filePath)
-	
+
 	// Return original SQL without instrumentation - DDL/DML are implicitly covered on success
 	return stmt.RawSQL, locations
 }
@@ -97,18 +97,18 @@ func instrumentStatement(stmt *parser.Statement, filePath string) (string, []Cov
 // instrumentPlpgsqlFunction instruments a PL/pgSQL function with line-by-line coverage
 func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
 	var locations []CoveragePoint
-	
+
 	// Split the function into lines
 	lines := strings.Split(stmt.RawSQL, "\n")
 	result := strings.Builder{}
-	
+
 	currentLine := stmt.StartLine
 	inFunctionBody := false
-	
+
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		trimmedUpper := strings.ToUpper(trimmed)
-		
+
 		// Check if we're entering the function body
 		if !inFunctionBody && trimmedUpper == "BEGIN" {
 			inFunctionBody = true
@@ -117,7 +117,7 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 			currentLine++
 			continue
 		}
-		
+
 		// Check if we're exiting the function body (END followed by semicolon or end of line, not END IF)
 		if inFunctionBody && (trimmedUpper == "END;" || trimmedUpper == "END") && !strings.Contains(trimmedUpper, "IF") {
 			result.WriteString(line)
@@ -126,7 +126,7 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 			currentLine++
 			continue
 		}
-		
+
 		// Inside function body: instrument executable lines
 		if inFunctionBody && trimmed != "" && !strings.HasPrefix(trimmed, "--") {
 			// Skip control flow keywords that aren't executable statements
@@ -139,15 +139,15 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 				}
 				cp.SignalID = FormatSignalID(cp.File, cp.Line, cp.Branch)
 				locations = append(locations, cp)
-				
+
 				// Inject NOTIFY before the line
 				indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-				notifyCall := fmt.Sprintf("%sPERFORM pg_notify('pgcov', '%s');\n", 
+				notifyCall := fmt.Sprintf("%sPERFORM pg_notify('pgcov', '%s');\n",
 					indent, strings.ReplaceAll(cp.SignalID, "'", "''"))
 				result.WriteString(notifyCall)
 			}
 		}
-		
+
 		// Write original line
 		result.WriteString(line)
 		if i < len(lines)-1 {
@@ -155,7 +155,7 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 		}
 		currentLine++
 	}
-	
+
 	return result.String(), locations
 }
 
@@ -179,7 +179,7 @@ func instrumentSQLFunction(stmt *parser.Statement, filePath string) (string, []C
 		Branch: "",
 	}
 	cp.SignalID = FormatSignalID(cp.File, cp.Line, cp.Branch)
-	
+
 	// SQL functions are harder to instrument - for now, just track the function call
 	// This would require wrapping the SQL expression which is complex
 	return stmt.RawSQL, []CoveragePoint{cp}
@@ -188,10 +188,10 @@ func instrumentSQLFunction(stmt *parser.Statement, filePath string) (string, []C
 // markStatementLinesAsCovered creates coverage points for all non-comment lines
 func markStatementLinesAsCovered(stmt *parser.Statement, filePath string) []CoveragePoint {
 	var locations []CoveragePoint
-	
+
 	lines := strings.Split(stmt.RawSQL, "\n")
 	currentLine := stmt.StartLine
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		// Skip empty lines and comments
@@ -206,7 +206,7 @@ func markStatementLinesAsCovered(stmt *parser.Statement, filePath string) []Cove
 		}
 		currentLine++
 	}
-	
+
 	return locations
 }
 
@@ -235,4 +235,3 @@ func findStatementPosition(sql string, lineNum int) int {
 	}
 	return pos
 }
-
