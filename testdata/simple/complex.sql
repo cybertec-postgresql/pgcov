@@ -42,3 +42,38 @@ $$ LANGUAGE plpgsql;
 
 -- DML: Select to verify data
 SELECT COUNT(*) FROM customers;
+
+-- DO block: Test and demonstrate the calculate_discount function
+DO $$
+DECLARE
+    customer RECORD;
+    original_price NUMERIC := 100.00;
+    discounted_price NUMERIC;
+    total_savings NUMERIC := 0;
+BEGIN
+    -- Loop through each customer
+    FOR customer IN SELECT * FROM customers ORDER BY id LOOP
+        discounted_price := calculate_discount(original_price, customer.customer_type);
+        
+        -- Branch based on customer type
+        IF customer.customer_type = 'VIP' THEN
+            RAISE NOTICE 'VIP Customer %: $% -> $% (saved $%)', 
+                customer.name, 
+                original_price, 
+                discounted_price,
+                original_price - discounted_price;
+            total_savings := total_savings + (original_price - discounted_price);
+        ELSIF customer.customer_type = 'REGULAR' THEN
+            RAISE NOTICE 'Regular Customer %: $% -> $%', 
+                customer.name, 
+                original_price, 
+                discounted_price;
+            total_savings := total_savings + (original_price - discounted_price);
+        ELSE
+            RAISE NOTICE 'Other Customer %: Minimal discount applied', customer.name;
+        END IF;
+    END LOOP;
+    
+    RAISE NOTICE 'Total savings across all customers: $%', total_savings;
+END;
+$$;
