@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -45,6 +46,9 @@ func (e *Executor) Execute(ctx context.Context, testFile *discovery.DiscoveredFi
 	if err != nil {
 		testRun.Status = TestFailed
 		testRun.Error = err
+		if e.verbose {
+			fmt.Printf("[ERROR] Test failed: %v\n", err)
+		}
 	} else {
 		testRun.Status = TestPassed
 	}
@@ -63,7 +67,11 @@ func (e *Executor) ExecuteBatch(ctx context.Context, testFiles []discovery.Disco
 			fmt.Printf("Running test: %s\n", testFiles[i].RelativePath)
 		}
 
-		run, err := e.Execute(ctx, &testFiles[i], sourceFiles)
+		// Filter source files to only include those from the same directory as the test
+		testDir := filepath.Dir(testFiles[i].Path)
+		filteredSources := filterSourcesByDirectory(sourceFiles, testDir)
+
+		run, err := e.Execute(ctx, &testFiles[i], filteredSources)
 		if err != nil {
 			// Continue with other tests even if one fails
 			if e.verbose {
@@ -80,6 +88,18 @@ func (e *Executor) ExecuteBatch(ctx context.Context, testFiles []discovery.Disco
 	}
 
 	return runs, nil
+}
+
+// filterSourcesByDirectory returns only source files from the specified directory
+func filterSourcesByDirectory(sources []*instrument.InstrumentedSQL, testDir string) []*instrument.InstrumentedSQL {
+	var filtered []*instrument.InstrumentedSQL
+	for _, src := range sources {
+		sourceDir := filepath.Dir(src.Original.File.Path)
+		if sourceDir == testDir {
+			filtered = append(filtered, src)
+		}
+	}
+	return filtered
 }
 
 // SummarizeRuns creates a summary of test execution results
