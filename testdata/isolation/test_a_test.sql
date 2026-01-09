@@ -20,5 +20,6 @@ SELECT get_user_count() = 3 AS test_user_count;
 SELECT get_latest_user() = 'Charlie' AS test_latest_user;
 
 -- Verify table structure (version 1)
-SELECT COUNT(*) = 2 FROM information_schema.columns 
-WHERE table_name = 'users' AS test_table_structure;
+SELECT (COUNT(*) = 2) AS test_table_structure
+FROM information_schema.columns 
+WHERE table_name = 'users';

@@ -20,8 +20,9 @@ SELECT get_user_count() = 2 AS test_user_count;
 SELECT get_latest_user() = 'Eve' AS test_latest_user;
 
 -- Verify table structure (version 2 has 3 columns)
-SELECT COUNT(*) = 3 FROM information_schema.columns 
-WHERE table_name = 'users' AS test_table_structure;
+SELECT (COUNT(*) = 3) AS test_table_structure
+FROM information_schema.columns 
+WHERE table_name = 'users';
 
 -- Verify email data exists
-SELECT email = 'eve@example.com' FROM users WHERE name = 'Eve' AS test_email_data;
+SELECT (email = 'eve@example.com') AS test_email_data FROM users WHERE name = 'Eve';
