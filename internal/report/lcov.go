@@ -5,7 +5,7 @@ import (
 	"io"
 	"sort"
 
-	"github.com/pashagolub/pgcov/internal/coverage"
+	"github.com/cybertec-postgresql/pgcov/internal/coverage"
 )
 
 // LCOVReporter formats coverage data in LCOV format

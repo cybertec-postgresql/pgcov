@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/pashagolub/pgcov/internal/parser"
+	"github.com/cybertec-postgresql/pgcov/internal/parser"
 )
 
 // InstrumentSimple is a Phase 3 implementation that doesn't inject NOTIFY yet

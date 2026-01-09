@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/cybertec-postgresql/pgcov/internal/errors"
+	"github.com/cybertec-postgresql/pgcov/pkg/types"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pashagolub/pgcov/internal/errors"
-	"github.com/pashagolub/pgcov/pkg/types"
 )
 
 // Pool wraps pgxpool.Pool with additional functionality

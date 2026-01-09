@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/pashagolub/pgcov/internal/coverage"
+	"github.com/cybertec-postgresql/pgcov/internal/coverage"
 )
 
 // JSONReporter formats coverage data as JSON

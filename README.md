@@ -51,7 +51,7 @@ sudo dnf install gcc
 **Linux/macOS**:
 ```bash
 # Clone repository
-git clone https://github.com/pashagolub/pgcov.git
+git clone https://github.com/cybertec-postgresql/pgcov.git
 cd pgcov
 
 # Enable CGO and build
@@ -65,7 +65,7 @@ go install ./cmd/pgcov
 **Windows (PowerShell) - Quick Build**:
 ```powershell
 # Clone repository
-git clone https://github.com/pashagolub/pgcov.git
+git clone https://github.com/cybertec-postgresql/pgcov.git
 cd pgcov
 
 # Use the build script (handles CGO automatically)
@@ -75,7 +75,7 @@ cd pgcov
 **Windows (PowerShell) - Manual Build**:
 ```powershell
 # Clone repository
-git clone https://github.com/pashagolub/pgcov.git
+git clone https://github.com/cybertec-postgresql/pgcov.git
 cd pgcov
 
 # Enable CGO and set compiler
@@ -90,7 +90,7 @@ go build -o pgcov.exe .\cmd\pgcov
 **Windows (CMD)**:
 ```cmd
 REM Clone repository
-git clone https://github.com/pashagolub/pgcov.git
+git clone https://github.com/cybertec-postgresql/pgcov.git
 cd pgcov
 
 REM Enable CGO and set compiler
@@ -296,7 +296,7 @@ jobs:
           go-version: '1.21'
       
       - name: Install pgcov
-        run: go install github.com/pashagolub/pgcov/cmd/pgcov@latest
+        run: go install github.com/cybertec-postgresql/pgcov/cmd/pgcov@latest
       
       - name: Run tests
         env:
@@ -553,6 +553,6 @@ Contributions welcome! Please open an issue or pull request.
 
 ## Support
 
-- **Documentation**: [Full docs](https://github.com/pashagolub/pgcov/docs)
-- **Issues**: [GitHub Issues](https://github.com/pashagolub/pgcov/issues)
+- **Documentation**: [Full docs](https://github.com/cybertec-postgresql/pgcov/docs)
+- **Issues**: [GitHub Issues](https://github.com/cybertec-postgresql/pgcov/issues)
 - **Examples**: [Examples directory](./examples)

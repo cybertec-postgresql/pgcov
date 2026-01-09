@@ -3,8 +3,8 @@ package runner
 import (
 	"time"
 
-	"github.com/pashagolub/pgcov/internal/discovery"
-	"github.com/pashagolub/pgcov/pkg/types"
+	"github.com/cybertec-postgresql/pgcov/internal/discovery"
+	"github.com/cybertec-postgresql/pgcov/pkg/types"
 )
 
 // CoverageSignal is an alias for the shared type

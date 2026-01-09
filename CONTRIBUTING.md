@@ -69,7 +69,7 @@ git clone https://github.com/YOUR_USERNAME/pgcov.git
 cd pgcov
 
 # Add upstream remote
-git remote add upstream https://github.com/pashagolub/pgcov.git
+git remote add upstream https://github.com/cybertec-postgresql/pgcov.git
 
 # Install dependencies
 go mod download
@@ -440,8 +440,8 @@ go mod tidy
 
 ### Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/pashagolub/pgcov/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/pashagolub/pgcov/discussions)
+- **Issues**: [GitHub Issues](https://github.com/cybertec-postgresql/pgcov/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/cybertec-postgresql/pgcov/discussions)
 - **Documentation**: Check README.md and code comments
 
 ## License

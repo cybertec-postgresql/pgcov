@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cybertec-postgresql/pgcov/pkg/types"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/pashagolub/pgcov/pkg/types"
 )
 
 // Listener handles PostgreSQL LISTEN/NOTIFY for coverage signals

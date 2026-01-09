@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pashagolub/pgcov/internal/discovery"
-	"github.com/pashagolub/pgcov/internal/parser"
+	"github.com/cybertec-postgresql/pgcov/internal/discovery"
+	"github.com/cybertec-postgresql/pgcov/internal/parser"
 )
 
 func TestInstrument_BasicSQL(t *testing.T) {

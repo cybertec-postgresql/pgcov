@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pashagolub/pgcov/pkg/types"
+	"github.com/cybertec-postgresql/pgcov/pkg/types"
 )
 
 // skipIfNoPostgres skips the test if PostgreSQL is not available

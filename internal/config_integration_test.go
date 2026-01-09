@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pashagolub/pgcov/internal/cli"
-	"github.com/pashagolub/pgcov/pkg/types"
+	"github.com/cybertec-postgresql/pgcov/internal/cli"
+	"github.com/cybertec-postgresql/pgcov/pkg/types"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"

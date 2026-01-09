@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/pashagolub/pgcov/internal/discovery"
-	"github.com/pashagolub/pgcov/internal/errors"
+	"github.com/cybertec-postgresql/pgcov/internal/discovery"
+	"github.com/cybertec-postgresql/pgcov/internal/errors"
 	pgquery "github.com/pganalyze/pg_query_go/v6"
 )
 

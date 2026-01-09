@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/cybertec-postgresql/pgcov/internal/database"
+	"github.com/cybertec-postgresql/pgcov/internal/discovery"
+	"github.com/cybertec-postgresql/pgcov/internal/instrument"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pashagolub/pgcov/internal/database"
-	"github.com/pashagolub/pgcov/internal/discovery"
-	"github.com/pashagolub/pgcov/internal/instrument"
 )
 
 // Executor orchestrates test execution with coverage tracking

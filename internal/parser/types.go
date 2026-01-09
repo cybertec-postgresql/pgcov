@@ -1,7 +1,7 @@
 package parser
 
 import (
-	"github.com/pashagolub/pgcov/internal/discovery"
+	"github.com/cybertec-postgresql/pgcov/internal/discovery"
 	pgquery "github.com/pganalyze/pg_query_go/v6"
 )
 

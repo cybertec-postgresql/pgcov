@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/pashagolub/pgcov/internal/instrument"
-	"github.com/pashagolub/pgcov/internal/runner"
+	"github.com/cybertec-postgresql/pgcov/internal/instrument"
+	"github.com/cybertec-postgresql/pgcov/internal/runner"
 )
 
 // Collector aggregates coverage signals from test runs

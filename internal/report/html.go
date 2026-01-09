@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/pashagolub/pgcov/internal/coverage"
+	"github.com/cybertec-postgresql/pgcov/internal/coverage"
 )
 
 // HTMLReporter formats coverage data as HTML

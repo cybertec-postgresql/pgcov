@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/pashagolub/pgcov/internal/coverage"
-	"github.com/pashagolub/pgcov/internal/report"
+	"github.com/cybertec-postgresql/pgcov/internal/coverage"
+	"github.com/cybertec-postgresql/pgcov/internal/report"
 )
 
 // Report generates a coverage report from saved coverage data

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/pashagolub/pgcov/internal/coverage"
+	"github.com/cybertec-postgresql/pgcov/internal/coverage"
 )
 
 // Formatter is an interface for coverage report formatters

@@ -1,6 +1,6 @@
 package instrument
 
-import "github.com/pashagolub/pgcov/internal/parser"
+import "github.com/cybertec-postgresql/pgcov/internal/parser"
 
 // InstrumentedSQL represents SQL code that has been instrumented for coverage tracking
 type InstrumentedSQL struct {

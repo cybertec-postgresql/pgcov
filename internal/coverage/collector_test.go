@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pashagolub/pgcov/internal/runner"
+	"github.com/cybertec-postgresql/pgcov/internal/runner"
 )
 
 func TestNewCollector(t *testing.T) {

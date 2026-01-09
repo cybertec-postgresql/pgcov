@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pashagolub/pgcov/internal/coverage"
-	"github.com/pashagolub/pgcov/internal/database"
-	"github.com/pashagolub/pgcov/internal/discovery"
-	"github.com/pashagolub/pgcov/internal/instrument"
-	"github.com/pashagolub/pgcov/internal/parser"
-	"github.com/pashagolub/pgcov/internal/runner"
+	"github.com/cybertec-postgresql/pgcov/internal/coverage"
+	"github.com/cybertec-postgresql/pgcov/internal/database"
+	"github.com/cybertec-postgresql/pgcov/internal/discovery"
+	"github.com/cybertec-postgresql/pgcov/internal/instrument"
+	"github.com/cybertec-postgresql/pgcov/internal/parser"
+	"github.com/cybertec-postgresql/pgcov/internal/runner"
 )
 
 // Run executes the test runner workflow

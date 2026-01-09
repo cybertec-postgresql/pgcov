@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pashagolub/pgcov/internal/parser"
+	"github.com/cybertec-postgresql/pgcov/internal/parser"
 )
 
 // Instrument takes parsed SQL and injects coverage tracking calls

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pashagolub/pgcov/internal/discovery"
-	pgcoVerrors "github.com/pashagolub/pgcov/internal/errors"
+	"github.com/cybertec-postgresql/pgcov/internal/discovery"
+	pgcoVerrors "github.com/cybertec-postgresql/pgcov/internal/errors"
 )
 
 func TestParse_ValidSQL(t *testing.T) {

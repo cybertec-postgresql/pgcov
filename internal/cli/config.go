@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/pashagolub/pgcov/pkg/types"
+	"github.com/cybertec-postgresql/pgcov/pkg/types"
 )
 
 // Config is an alias for the shared Config type

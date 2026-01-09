@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cybertec-postgresql/pgcov/pkg/types"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pashagolub/pgcov/pkg/types"
 )
 
 // CreateTempDatabase creates a temporary database with a unique name

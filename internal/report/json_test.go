@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pashagolub/pgcov/internal/coverage"
+	"github.com/cybertec-postgresql/pgcov/internal/coverage"
 )
 
 func TestJSONReporter_Format(t *testing.T) {

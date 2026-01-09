@@ -1,4 +1,4 @@
-module github.com/pashagolub/pgcov
+module github.com/cybertec-postgresql/pgcov
 
 go 1.25.5
 

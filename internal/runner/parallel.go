@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pashagolub/pgcov/internal/discovery"
-	"github.com/pashagolub/pgcov/internal/instrument"
+	"github.com/cybertec-postgresql/pgcov/internal/discovery"
+	"github.com/cybertec-postgresql/pgcov/internal/instrument"
 )
 
 // WorkerPool manages parallel test execution
