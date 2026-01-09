@@ -26,6 +26,5 @@ BEGIN
     FOR i IN start_id..end_id LOOP
         RAISE NOTICE 'Processing ID: %', i;
     END LOOP;
-    COMMIT;
 END;
 $$;
