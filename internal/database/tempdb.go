@@ -46,8 +46,14 @@ func CreateTempDatabase(ctx context.Context, pool *Pool) (*types.TempDatabase, e
 		return nil, fmt.Errorf("failed to parse base connection string: %w", err)
 	}
 
-	baseConfig.ConnConfig.Database = dbName
-	connString := baseConfig.ConnString()
+	// Build new connection string with the new database name
+	connString := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		baseConfig.ConnConfig.Host,
+		baseConfig.ConnConfig.Port,
+		baseConfig.ConnConfig.User,
+		baseConfig.ConnConfig.Password,
+		dbName,
+		"prefer") // Default to prefer for sslmode
 
 	return &types.TempDatabase{
 		Name:             dbName,
