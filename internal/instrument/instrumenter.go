@@ -104,6 +104,7 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 
 	currentLine := stmt.StartLine
 	inFunctionBody := false
+	inMultiLineStatement := false
 
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -118,8 +119,12 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 			continue
 		}
 
-		// Check if we're exiting the function body (END followed by semicolon or end of line, not END IF)
-		if inFunctionBody && (trimmedUpper == "END;" || trimmedUpper == "END") && !strings.Contains(trimmedUpper, "IF") {
+		// Check if we're exiting the function body (END followed by semicolon, not END IF/LOOP/CASE)
+		if inFunctionBody && 
+		   (trimmedUpper == "END;" || trimmedUpper == "END$$;" || trimmedUpper == "END") &&
+		   !strings.HasPrefix(trimmedUpper, "END IF") &&
+		   !strings.HasPrefix(trimmedUpper, "END LOOP") &&
+		   !strings.HasPrefix(trimmedUpper, "END CASE") {
 			result.WriteString(line)
 			result.WriteString("\n")
 			inFunctionBody = false
@@ -131,20 +136,30 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 		if inFunctionBody && trimmed != "" && !strings.HasPrefix(trimmed, "--") {
 			// Skip control flow keywords that aren't executable statements
 			if !isControlFlowKeyword(trimmedUpper) {
-				// Create coverage point for this line
-				cp := CoveragePoint{
-					File:   filePath,
-					Line:   currentLine,
-					Branch: "",
-				}
-				cp.SignalID = FormatSignalID(cp.File, cp.Line, cp.Branch)
-				locations = append(locations, cp)
+				// Only instrument the start of a new statement (not continuation lines)
+				if !inMultiLineStatement {
+					// Create coverage point for this line
+					cp := CoveragePoint{
+						File:   filePath,
+						Line:   currentLine,
+						Branch: "",
+					}
+					cp.SignalID = FormatSignalID(cp.File, cp.Line, cp.Branch)
+					locations = append(locations, cp)
 
-				// Inject NOTIFY before the line
-				indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-				notifyCall := fmt.Sprintf("%sPERFORM pg_notify('pgcov', '%s');\n",
-					indent, strings.ReplaceAll(cp.SignalID, "'", "''"))
-				result.WriteString(notifyCall)
+					// Inject NOTIFY before the line
+					indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+					notifyCall := fmt.Sprintf("%sPERFORM pg_notify('pgcov', '%s');\n",
+						indent, strings.ReplaceAll(cp.SignalID, "'", "''"))
+					result.WriteString(notifyCall)
+				}
+			}
+			
+			// Track if we're in a multi-line statement (line doesn't end with semicolon)
+			if strings.HasSuffix(trimmed, ";") {
+				inMultiLineStatement = false
+			} else {
+				inMultiLineStatement = true
 			}
 		}
 
@@ -161,12 +176,22 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 
 // isControlFlowKeyword checks if a line is a control flow keyword that shouldn't be instrumented
 func isControlFlowKeyword(upperTrimmed string) bool {
-	keywords := []string{"ELSIF", "ELSE", "END IF", "LOOP", "END LOOP", "WHEN", "END CASE"}
+	keywords := []string{
+		"ELSIF", "ELSE", "END IF", "LOOP", "END LOOP", "WHEN", "END CASE",
+		"FOR ", "WHILE ", "IF ", "CASE ", "DECLARE",
+	}
 	for _, kw := range keywords {
 		if strings.HasPrefix(upperTrimmed, kw) {
 			return true
 		}
 	}
+	
+	// Also skip transaction control statements (these are complete statements)
+	if upperTrimmed == "COMMIT;" || upperTrimmed == "ROLLBACK;" || 
+	   upperTrimmed == "COMMIT" || upperTrimmed == "ROLLBACK" {
+		return true
+	}
+	
 	return false
 }
 
