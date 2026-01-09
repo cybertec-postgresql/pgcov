@@ -208,13 +208,15 @@ func (e *Executor) executeTestWorkflow(ctx context.Context, testRun *TestRun, so
 			return fmt.Errorf("failed to load source %s: %w", source.Original.File.RelativePath, err)
 		}
 
-		// For successfully loaded source files, mark all tracked locations as covered
-		// (DDL/DML statements are implicitly covered if they execute without error)
+		// For successfully loaded source files, mark DDL/DML locations as implicitly covered
+		// (PL/pgSQL code coverage is tracked via NOTIFY signals during execution)
 		for _, loc := range source.Locations {
-			testRun.CoverageSigs = append(testRun.CoverageSigs, CoverageSignal{
-				SignalID:  loc.SignalID,
-				Timestamp: time.Now(),
-			})
+			if loc.ImplicitCoverage {
+				testRun.CoverageSigs = append(testRun.CoverageSigs, CoverageSignal{
+					SignalID:  loc.SignalID,
+					Timestamp: time.Now(),
+				})
+			}
 		}
 	}
 	conn.Release()

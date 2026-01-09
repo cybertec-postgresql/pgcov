@@ -86,6 +86,12 @@ func instrumentStatement(stmt *parser.Statement, filePath string) (string, []Cov
 		return instrumented, locs
 	}
 
+	// For DO blocks with PL/pgSQL, instrument like a function
+	if strings.HasPrefix(strings.TrimSpace(strings.ToUpper(stmt.RawSQL)), "DO") {
+		instrumented, locs := instrumentPlpgsqlFunction(stmt, filePath)
+		return instrumented, locs
+	}
+
 	// For non-function statements (DDL, DML), mark all non-comment lines as covered
 	// These will be automatically marked as covered if the file executes without errors
 	locations = markStatementLinesAsCovered(stmt, filePath)
@@ -120,11 +126,11 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 		}
 
 		// Check if we're exiting the function body (END followed by semicolon, not END IF/LOOP/CASE)
-		if inFunctionBody && 
-		   (trimmedUpper == "END;" || trimmedUpper == "END$$;" || trimmedUpper == "END") &&
-		   !strings.HasPrefix(trimmedUpper, "END IF") &&
-		   !strings.HasPrefix(trimmedUpper, "END LOOP") &&
-		   !strings.HasPrefix(trimmedUpper, "END CASE") {
+		if inFunctionBody &&
+			(trimmedUpper == "END;" || trimmedUpper == "END$$;" || trimmedUpper == "END") &&
+			!strings.HasPrefix(trimmedUpper, "END IF") &&
+			!strings.HasPrefix(trimmedUpper, "END LOOP") &&
+			!strings.HasPrefix(trimmedUpper, "END CASE") {
 			result.WriteString(line)
 			result.WriteString("\n")
 			inFunctionBody = false
@@ -135,14 +141,17 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 		// Inside function body: instrument executable lines
 		if inFunctionBody && trimmed != "" && !strings.HasPrefix(trimmed, "--") {
 			// Skip control flow keywords that aren't executable statements
-			if !isControlFlowKeyword(trimmedUpper) {
+			isControlFlow := isControlFlowKeyword(trimmedUpper)
+
+			if !isControlFlow {
 				// Only instrument the start of a new statement (not continuation lines)
 				if !inMultiLineStatement {
 					// Create coverage point for this line
 					cp := CoveragePoint{
-						File:   filePath,
-						Line:   currentLine,
-						Branch: "",
+						File:             filePath,
+						Line:             currentLine,
+						Branch:           "",
+						ImplicitCoverage: false, // Explicit coverage via NOTIFY
 					}
 					cp.SignalID = FormatSignalID(cp.File, cp.Line, cp.Branch)
 					locations = append(locations, cp)
@@ -154,12 +163,15 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 					result.WriteString(notifyCall)
 				}
 			}
-			
-			// Track if we're in a multi-line statement (line doesn't end with semicolon)
-			if strings.HasSuffix(trimmed, ";") {
-				inMultiLineStatement = false
-			} else {
-				inMultiLineStatement = true
+
+			// Track if we're in a multi-line statement
+			// Control flow keywords don't count as multi-line statement starters
+			if !isControlFlow {
+				if strings.HasSuffix(trimmed, ";") {
+					inMultiLineStatement = false
+				} else {
+					inMultiLineStatement = true
+				}
 			}
 		}
 
@@ -176,22 +188,38 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 
 // isControlFlowKeyword checks if a line is a control flow keyword that shouldn't be instrumented
 func isControlFlowKeyword(upperTrimmed string) bool {
-	keywords := []string{
-		"ELSIF", "ELSE", "END IF", "LOOP", "END LOOP", "WHEN", "END CASE",
-		"FOR ", "WHILE ", "IF ", "CASE ", "DECLARE",
+	// Skip lines that are ONLY control flow keywords (no executable code)
+	// For IF/ELSIF with conditions, we still skip them
+	// For ELSE without code, we skip it
+	// But assignments like "discount_rate := 0.20;" should NOT be skipped
+
+	// Keywords that are complete statements by themselves
+	keywordsExact := []string{
+		"ELSE", "ELSIF", "END IF", "END IF;", "LOOP", "END LOOP", "END LOOP;",
+		"END CASE", "END CASE;", "DECLARE", "BEGIN",
 	}
-	for _, kw := range keywords {
+	for _, kw := range keywordsExact {
+		if upperTrimmed == kw {
+			return true
+		}
+	}
+
+	// Keywords that start a line but may have conditions
+	keywordsPrefix := []string{
+		"IF ", "ELSIF ", "WHEN ", "FOR ", "WHILE ", "CASE ",
+	}
+	for _, kw := range keywordsPrefix {
 		if strings.HasPrefix(upperTrimmed, kw) {
 			return true
 		}
 	}
-	
+
 	// Also skip transaction control statements (these are complete statements)
-	if upperTrimmed == "COMMIT;" || upperTrimmed == "ROLLBACK;" || 
-	   upperTrimmed == "COMMIT" || upperTrimmed == "ROLLBACK" {
+	if upperTrimmed == "COMMIT;" || upperTrimmed == "ROLLBACK;" ||
+		upperTrimmed == "COMMIT" || upperTrimmed == "ROLLBACK" {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -222,9 +250,10 @@ func markStatementLinesAsCovered(stmt *parser.Statement, filePath string) []Cove
 		// Skip empty lines and comments
 		if trimmed != "" && !strings.HasPrefix(trimmed, "--") {
 			cp := CoveragePoint{
-				File:   filePath,
-				Line:   currentLine,
-				Branch: "",
+				File:             filePath,
+				Line:             currentLine,
+				Branch:           "",
+				ImplicitCoverage: true, // DDL/DML are implicitly covered on successful execution
 			}
 			cp.SignalID = FormatSignalID(cp.File, cp.Line, cp.Branch)
 			locations = append(locations, cp)

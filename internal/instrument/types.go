@@ -11,10 +11,11 @@ type InstrumentedSQL struct {
 
 // CoveragePoint represents a single location in source code tracked for coverage
 type CoveragePoint struct {
-	File     string // Relative file path
-	Line     int    // Line number (1-indexed)
-	Branch   string // Branch identifier (optional, e.g., "if_true", "if_false")
-	SignalID string // Unique signal identifier sent via NOTIFY
+	File             string // Relative file path
+	Line             int    // Line number (1-indexed)
+	Branch           string // Branch identifier (optional, e.g., "if_true", "if_false")
+	SignalID         string // Unique signal identifier sent via NOTIFY
+	ImplicitCoverage bool   // True if covered by successful execution (DDL/DML), false if needs NOTIFY
 }
 
 // FormatSignalID generates a signal ID for a coverage point
