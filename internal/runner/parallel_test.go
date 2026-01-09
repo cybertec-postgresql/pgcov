@@ -25,14 +25,10 @@ func TestParallelExecution(t *testing.T) {
 
 	// Setup config
 	config := &types.Config{
-		PGHost:      "localhost",
-		PGPort:      5432,
-		PGUser:      "postgres",
-		PGPassword:  "",
-		PGDatabase:  "postgres",
-		Timeout:     30 * time.Second,
-		Parallelism: 4, // Use 4 workers
-		Verbose:     testing.Verbose(),
+		ConnectionString: "host=localhost port=5432 user=postgres dbname=postgres sslmode=prefer",
+		Timeout:          30 * time.Second,
+		Parallelism:      4, // Use 4 workers
+		Verbose:          testing.Verbose(),
 	}
 
 	// Connect to database
@@ -157,14 +153,10 @@ func TestParallelExecutionAccuracy(t *testing.T) {
 	ctx := context.Background()
 
 	config := &types.Config{
-		PGHost:      "localhost",
-		PGPort:      5432,
-		PGUser:      "postgres",
-		PGPassword:  "",
-		PGDatabase:  "postgres",
-		Timeout:     30 * time.Second,
-		Parallelism: 2,
-		Verbose:     testing.Verbose(),
+		ConnectionString: "host=localhost port=5432 user=postgres dbname=postgres sslmode=prefer",
+		Timeout:          30 * time.Second,
+		Parallelism:      2,
+		Verbose:          testing.Verbose(),
 	}
 
 	pool, err := database.NewPool(ctx, config)

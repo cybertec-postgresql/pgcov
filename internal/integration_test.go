@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -60,16 +61,14 @@ func TestEndToEndWithTestcontainers(t *testing.T) {
 	t.Logf("PostgreSQL running at %s:%s", host, port.Port())
 
 	// Create test configuration
+	connString := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=prefer",
+		host, port.Port())
 	config := &types.Config{
-		PGHost:       host,
-		PGPort:       port.Int(),
-		PGUser:       "testuser",
-		PGPassword:   "testpass",
-		PGDatabase:   "testdb",
-		Timeout:      30 * time.Second,
-		Parallelism:  1,
-		CoverageFile: "coverage.json",
-		Verbose:      true,
+		ConnectionString: connString,
+		Timeout:          30 * time.Second,
+		Parallelism:      1,
+		CoverageFile:     "coverage.json",
+		Verbose:          true,
 	}
 
 	// Test Phase 1: Discovery
@@ -281,13 +280,11 @@ func TestRunnerIsolation(t *testing.T) {
 	host, _ := pgContainer.Host(ctx)
 	port, _ := pgContainer.MappedPort(ctx, "5432")
 
+	connString := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=prefer",
+		host, port.Port())
 	config := &types.Config{
-		PGHost:     host,
-		PGPort:     port.Int(),
-		PGUser:     "testuser",
-		PGPassword: "testpass",
-		PGDatabase: "testdb",
-		Timeout:    30 * time.Second,
+		ConnectionString: connString,
+		Timeout:          30 * time.Second,
 	}
 
 	// Create connection pool
@@ -351,16 +348,14 @@ func TestOrderIndependence(t *testing.T) {
 	host, _ := pgContainer.Host(ctx)
 	port, _ := pgContainer.MappedPort(ctx, "5432")
 
+	connString := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=prefer",
+		host, port.Port())
 	config := &types.Config{
-		PGHost:       host,
-		PGPort:       port.Int(),
-		PGUser:       "testuser",
-		PGPassword:   "testpass",
-		PGDatabase:   "testdb",
-		Timeout:      30 * time.Second,
-		Parallelism:  1,
-		CoverageFile: filepath.Join(t.TempDir(), "coverage.json"),
-		Verbose:      true,
+		ConnectionString: connString,
+		Timeout:          30 * time.Second,
+		Parallelism:      1,
+		CoverageFile:     filepath.Join(t.TempDir(), "coverage.json"),
+		Verbose:          true,
 	}
 
 	testDir := "../testdata/simple"
@@ -541,16 +536,14 @@ func TestTestIndependence(t *testing.T) {
 	host, _ := pgContainer.Host(ctx)
 	port, _ := pgContainer.MappedPort(ctx, "5432")
 
+	connString := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=prefer",
+		host, port.Port())
 	config := &types.Config{
-		PGHost:       host,
-		PGPort:       port.Int(),
-		PGUser:       "testuser",
-		PGPassword:   "testpass",
-		PGDatabase:   "testdb",
-		Timeout:      30 * time.Second,
-		Parallelism:  1,
-		CoverageFile: filepath.Join(t.TempDir(), "coverage.json"),
-		Verbose:      true,
+		ConnectionString: connString,
+		Timeout:          30 * time.Second,
+		Parallelism:      1,
+		CoverageFile:     filepath.Join(t.TempDir(), "coverage.json"),
+		Verbose:          true,
 	}
 
 	testDir := "../testdata/isolation"

@@ -70,7 +70,7 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	defer pool.Close()
 
 	if config.Verbose {
-		fmt.Printf("Connected to PostgreSQL at %s:%d\n", config.PGHost, config.PGPort)
+		fmt.Println("Connected to PostgreSQL")
 	}
 
 	// Step 6: Execute tests (parallel or sequential based on config)

@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -15,20 +14,26 @@ import (
 func skipIfNoPostgres(t *testing.T) *Pool {
 	t.Helper()
 
-	// Use environment variables if available, otherwise use defaults
-	pgPort := 5432
-	if portStr := os.Getenv("PGPORT"); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			pgPort = p
-		}
+	// Build connection string from environment variables with defaults
+	connParts := []string{
+		"host=" + getEnv("PGHOST", "localhost"),
+		"port=" + getEnv("PGPORT", "5432"),
+		"dbname=" + getEnv("PGDATABASE", "postgres"),
+		"sslmode=prefer",
 	}
+	
+	if user := getEnv("PGUSER", "postgres"); user != "" {
+		connParts = append(connParts, "user="+user)
+	}
+	
+	if password := getEnv("PGPASSWORD", ""); password != "" {
+		connParts = append(connParts, "password="+password)
+	}
+	
+	connString := strings.Join(connParts, " ")
 
 	config := &types.Config{
-		PGHost:     getEnv("PGHOST", "localhost"),
-		PGPort:     pgPort,
-		PGUser:     getEnv("PGUSER", "postgres"),
-		PGPassword: getEnv("PGPASSWORD", ""),
-		PGDatabase: getEnv("PGDATABASE", "postgres"),
+		ConnectionString: connString,
 	}
 
 	ctx := context.Background()

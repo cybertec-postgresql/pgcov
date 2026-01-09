@@ -37,15 +37,17 @@ func CreateTempDatabase(ctx context.Context, pool *Pool) (*types.TempDatabase, e
 		return nil, fmt.Errorf("failed to create temporary database: %w", err)
 	}
 
-	// Build connection string for the new database
-	connString := fmt.Sprintf("host=%s port=%d dbname=%s",
-		pool.config.PGHost, pool.config.PGPort, dbName)
-	if pool.config.PGUser != "" {
-		connString += fmt.Sprintf(" user=%s", pool.config.PGUser)
+	// Build connection string for the new database by replacing the dbname in the original connection string
+	// Parse the original connection config and change the database
+	baseConfig, err := pgxpool.ParseConfig(pool.config.ConnectionString)
+	if err != nil {
+		// Fallback: if parsing fails, drop the database and return error
+		_, _ = conn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+		return nil, fmt.Errorf("failed to parse base connection string: %w", err)
 	}
-	if pool.config.PGPassword != "" {
-		connString += fmt.Sprintf(" password=%s", pool.config.PGPassword)
-	}
+
+	baseConfig.ConnConfig.Database = dbName
+	connString := baseConfig.ConnString()
 
 	return &types.TempDatabase{
 		Name:             dbName,
