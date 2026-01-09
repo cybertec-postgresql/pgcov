@@ -25,6 +25,7 @@ pgcov is a Go-based CLI tool that discovers `*_test.sql` files, instruments SQL/
 ### C Compiler Setup
 
 **Linux/macOS**:
+
 ```bash
 # Ubuntu/Debian
 sudo apt-get install build-essential
@@ -37,11 +38,14 @@ sudo dnf install gcc
 ```
 
 **Windows**:
+
 - Install [MSYS2](https://www.msys2.org/)
 - Open MSYS2 terminal and run:
+
   ```bash
   pacman -S mingw-w64-x86_64-gcc
   ```
+
 - Add `C:\msys64\mingw64\bin` to your PATH
 
 ## Installation
@@ -49,6 +53,7 @@ sudo dnf install gcc
 ### Building from Source
 
 **Linux/macOS**:
+
 ```bash
 # Clone repository
 git clone https://github.com/cybertec-postgresql/pgcov.git
@@ -62,17 +67,8 @@ go build -o pgcov ./cmd/pgcov
 go install ./cmd/pgcov
 ```
 
-**Windows (PowerShell) - Quick Build**:
-```powershell
-# Clone repository
-git clone https://github.com/cybertec-postgresql/pgcov.git
-cd pgcov
-
-# Use the build script (handles CGO automatically)
-.\build.ps1
-```
-
 **Windows (PowerShell) - Manual Build**:
+
 ```powershell
 # Clone repository
 git clone https://github.com/cybertec-postgresql/pgcov.git
@@ -84,21 +80,6 @@ $env:CC = "C:\msys64\mingw64\bin\gcc.exe"
 $env:PATH = "$env:PATH;C:\msys64\mingw64\bin"
 
 # Build
-go build -o pgcov.exe .\cmd\pgcov
-```
-
-**Windows (CMD)**:
-```cmd
-REM Clone repository
-git clone https://github.com/cybertec-postgresql/pgcov.git
-cd pgcov
-
-REM Enable CGO and set compiler
-set CGO_ENABLED=1
-set CC=C:\msys64\mingw64\bin\gcc.exe
-set PATH=%PATH%;C:\msys64\mingw64\bin
-
-REM Build
 go build -o pgcov.exe .\cmd\pgcov
 ```
 
@@ -145,8 +126,8 @@ pgcov run ./tests/
 ### 4. Generate Coverage Reports
 
 ```bash
-# JSON format (default)
-pgcov report --format=json
+# HTML format (human-readable)
+pgcov report --format=html -o coverage.html
 
 # LCOV format (for CI)
 pgcov report --format=lcov -o coverage.lcov
@@ -161,7 +142,7 @@ pgcov report --format=lcov -o coverage.lcov
 pgcov run [path]
 
 # Generate coverage report
-pgcov report [--format=json|lcov] [-o output-file]
+pgcov report [--format=json|lcov|html] [-o output-file]
 
 # Show help
 pgcov help [command]
@@ -173,6 +154,7 @@ pgcov --version
 ### Configuration Flags
 
 **Connection**:
+
 - `--host`: PostgreSQL host (default: `localhost`)
 - `--port`: PostgreSQL port (default: `5432`, valid range: 1-65535)
 - `--user`: PostgreSQL user (default: current user)
@@ -180,19 +162,23 @@ pgcov --version
 - `--database`: Template database (default: `postgres`)
 
 **Execution**:
+
 - `--timeout`: Per-test timeout (default: `30s`, format: `10s`, `1m`, `90s`)
 - `--parallel`: Concurrent tests (default: `1`, valid range: 1-100)
 - `--verbose`: Enable debug output
 
 **Output**:
+
 - `--coverage-file`: Coverage data path (default: `.pgcov/coverage.json`)
 
 ### Environment Variables
 
 pgcov respects standard PostgreSQL environment variables:
+
 - `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`
 
 **Configuration Priority** (highest to lowest):
+
 1. Command-line flags (e.g., `--host`)
 2. Environment variables (e.g., `PGHOST`)
 3. Default values
@@ -324,7 +310,7 @@ jobs:
 - **Database Layer**: PostgreSQL connections and temporary databases (`pgx/v5`)
 - **Runner Layer**: Test execution orchestration and isolation
 - **Coverage Layer**: Signal collection and aggregation (LISTEN/NOTIFY)
-- **Reporter Layer**: Output formatting (JSON, LCOV)
+- **Reporter Layer**: Output formatting (HTML, JSON, LCOV)
 
 ## Development
 
@@ -333,6 +319,7 @@ jobs:
 The project includes comprehensive integration tests that use testcontainers to spin up a PostgreSQL instance.
 
 **Linux/macOS**:
+
 ```bash
 # Enable CGO
 export CGO_ENABLED=1
@@ -353,25 +340,8 @@ go test -timeout 5m ./...
 go test -cover ./...
 ```
 
-**Windows (PowerShell) - Quick Test**:
-```powershell
-# Use the test script (handles CGO automatically)
-.\test.ps1
+**Windows (PowerShell)**:
 
-# Run with verbose output
-.\test.ps1 -Verbose
-
-# Run specific tests
-.\test.ps1 -Run "TestConfig" -Verbose
-
-# Run short tests only (skips integration tests)
-.\test.ps1 -Short
-
-# Run specific package
-.\test.ps1 -Package ".\internal\cli\..." -Verbose
-```
-
-**Windows (PowerShell) - Manual**:
 ```powershell
 # Enable CGO and set compiler
 $env:CGO_ENABLED = "1"
@@ -394,23 +364,10 @@ go test -timeout 5m .\...
 go test -cover .\...
 ```
 
-**Windows (CMD)**:
-```cmd
-REM Enable CGO and set compiler
-set CGO_ENABLED=1
-set CC=C:\msys64\mingw64\bin\gcc.exe
-set PATH=%PATH%;C:\msys64\mingw64\bin
-
-REM Run all tests
-go test .\...
-
-REM Run with verbose output
-go test -v .\...
-```
-
 ### Building
 
 **Linux/macOS**:
+
 ```bash
 # Development build
 export CGO_ENABLED=1
@@ -430,6 +387,7 @@ go clean -cache
 ```
 
 **Windows (PowerShell)**:
+
 ```powershell
 # Development build
 $env:CGO_ENABLED = "1"
@@ -453,6 +411,7 @@ go clean -cache
 ### Test Requirements
 
 **Docker**: Integration tests use testcontainers-go which requires Docker to be running:
+
 - Linux: Docker Engine
 - macOS: Docker Desktop
 - Windows: Docker Desktop with WSL2 backend
@@ -462,6 +421,7 @@ go clean -cache
 ### Troubleshooting Build Issues
 
 **CGO errors on Linux**:
+
 ```bash
 # Install build tools
 sudo apt-get update
@@ -472,6 +432,7 @@ gcc --version
 ```
 
 **CGO errors on Windows**:
+
 ```powershell
 # Verify GCC is in PATH
 gcc --version
@@ -484,6 +445,7 @@ $env:PATH = "$env:PATH;C:\msys64\mingw64\bin"
 Ensure `C:\msys64\mingw64\bin` is in your PATH to access required MinGW DLLs.
 
 **Test container startup failures**:
+
 ```bash
 # Verify Docker is running
 docker ps
@@ -508,6 +470,7 @@ This project includes complete VS Code configuration for CGO development.
 ### Quick Start
 
 1. **Open workspace in VS Code**
+
    ```bash
    code .
    ```
@@ -533,15 +496,10 @@ This project includes complete VS Code configuration for CGO development.
 ### Configuration Files
 
 See [.vscode/README.md](.vscode/README.md) for detailed documentation:
+
 - **settings.json** - CGO environment for Go tools and terminal
 - **launch.json** - Debug configurations
 - **tasks.json** - Build and test tasks
-
-### Requirements
-
-**Windows Users**: Ensure MSYS2 MinGW-w64 GCC is installed at `C:\msys64\mingw64\bin\gcc.exe`
-
-If installed elsewhere, update the `CC` path in `.vscode/settings.json`.
 
 ## License
 
