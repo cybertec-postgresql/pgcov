@@ -123,5 +123,5 @@ func reportCommand(ctx context.Context, cmd *urfavecli.Command) error {
 	output := cmd.String("output")
 	coverageFile := cmd.String("coverage-file")
 
-	return cli.Report(coverageFile, format, output)
+	return cli.Report(ctx, coverageFile, format, output)
 }

@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/cybertec-postgresql/pgcov/internal/discovery"
-	"github.com/cybertec-postgresql/pgcov/internal/errors"
 	pgquery "github.com/pganalyze/pg_query_go/v6"
 )
 
@@ -21,7 +20,7 @@ func Parse(file *discovery.DiscoveredFile) (*ParsedSQL, error) {
 	result, err := pgquery.Parse(string(content))
 	if err != nil {
 		// Extract location information if available
-		return nil, &errors.ParseError{
+		return nil, &ParseError{
 			File:    file.Path,
 			Line:    0, // pg_query_go doesn't provide line info in error
 			Column:  0,
@@ -55,7 +54,7 @@ func ParseFile(filePath string) (*ParsedSQL, error) {
 func ParseSQL(sql string) (*pgquery.ParseResult, error) {
 	result, err := pgquery.Parse(sql)
 	if err != nil {
-		return nil, &errors.ParseError{
+		return nil, &ParseError{
 			File:    "<inline>",
 			Message: err.Error(),
 		}

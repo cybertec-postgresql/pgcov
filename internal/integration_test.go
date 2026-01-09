@@ -130,7 +130,7 @@ func TestEndToEndWithTestcontainers(t *testing.T) {
 
 		for _, file := range sourceFiles {
 			parsed, _ := parser.Parse(&file)
-			instrumented, err := instrument.Instrument(parsed)
+			instrumented, err := instrument.GenerateCoverageInstrument(parsed)
 			if err != nil {
 				t.Fatalf("Failed to instrument %s: %v", file.RelativePath, err)
 			}
@@ -229,14 +229,14 @@ func TestEndToEndWithTestcontainers(t *testing.T) {
 		_, _ = cli.Run(ctx, config, testDir)
 
 		// Test JSON report
-		err := cli.Report(config.CoverageFile, "json", "-")
+		err := cli.Report(t.Context(), config.CoverageFile, "json", "-")
 		if err != nil {
 			t.Fatalf("Failed to generate JSON report: %v", err)
 		}
 
 		// Test LCOV report
 		lcovFile := filepath.Join(t.TempDir(), "coverage.lcov")
-		err = cli.Report(config.CoverageFile, "lcov", lcovFile)
+		err = cli.Report(t.Context(), config.CoverageFile, "lcov", lcovFile)
 		if err != nil {
 			t.Fatalf("Failed to generate LCOV report: %v", err)
 		}
@@ -313,8 +313,12 @@ func TestRunnerIsolation(t *testing.T) {
 	t.Logf("Created isolated databases: %s and %s", db1.Name, db2.Name)
 
 	// Cleanup
-	database.DestroyTempDatabase(ctx, pool, db1)
-	database.DestroyTempDatabase(ctx, pool, db2)
+	if err := database.DestroyTempDatabase(ctx, pool, db1); err != nil {
+		t.Logf("Warning: failed to cleanup db1: %v", err)
+	}
+	if err := database.DestroyTempDatabase(ctx, pool, db2); err != nil {
+		t.Logf("Warning: failed to cleanup db2: %v", err)
+	}
 
 	t.Log("✓ Isolation test passed!")
 }
@@ -387,7 +391,7 @@ func TestOrderIndependence(t *testing.T) {
 		parsedSources = append(parsedSources, parsed)
 	}
 
-	instrumentedSources, err := instrument.InstrumentBatch(parsedSources)
+	instrumentedSources, err := instrument.GenerateCoverageInstruments(parsedSources)
 	if err != nil {
 		t.Fatalf("Failed to instrument sources: %v", err)
 	}
@@ -577,7 +581,7 @@ func TestTestIndependence(t *testing.T) {
 		parsedSources = append(parsedSources, parsed)
 	}
 
-	instrumentedSources, err := instrument.InstrumentBatch(parsedSources)
+	instrumentedSources, err := instrument.GenerateCoverageInstruments(parsedSources)
 	if err != nil {
 		t.Fatalf("Failed to instrument sources: %v", err)
 	}

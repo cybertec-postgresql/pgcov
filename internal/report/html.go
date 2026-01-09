@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -240,87 +239,6 @@ func (r *HTMLReporter) getCoverageClass(hitCount int) string {
 		return "cov10"
 	}
 	return fmt.Sprintf("cov%d", hitCount)
-}
-
-// getCountDisplay returns the display string for hit count
-func (r *HTMLReporter) getCountDisplay(hitCount int) string {
-	if hitCount == 0 {
-		return "0"
-	}
-	if hitCount == 1 {
-		return "1"
-	}
-	return fmt.Sprintf("%d", hitCount)
-}
-
-// highlightSQL applies basic SQL syntax highlighting
-func (r *HTMLReporter) highlightSQL(line string) string {
-	if line == "" {
-		return ""
-	}
-
-	// Escape HTML first
-	line = html.EscapeString(line)
-
-	// SQL keywords (case-insensitive)
-	keywords := []string{
-		"SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER",
-		"TABLE", "INDEX", "VIEW", "FUNCTION", "PROCEDURE", "TRIGGER", "BEGIN", "END",
-		"IF", "THEN", "ELSE", "ELSIF", "LOOP", "WHILE", "FOR", "RETURN", "RETURNS",
-		"AS", "IS", "IN", "NOT", "NULL", "AND", "OR", "ON", "JOIN", "LEFT", "RIGHT",
-		"INNER", "OUTER", "CROSS", "USING", "GROUP", "BY", "ORDER", "HAVING", "LIMIT",
-		"OFFSET", "UNION", "INTERSECT", "EXCEPT", "CASE", "WHEN", "EXISTS", "ANY", "ALL",
-		"DECLARE", "SET", "INTO", "VALUES", "DEFAULT", "PRIMARY", "KEY", "FOREIGN",
-		"REFERENCES", "UNIQUE", "CHECK", "CONSTRAINT", "CASCADE", "SERIAL", "BOOLEAN",
-		"INTEGER", "BIGINT", "TEXT", "VARCHAR", "CHAR", "DATE", "TIME", "TIMESTAMP",
-		"NUMERIC", "DECIMAL", "REAL", "DOUBLE", "PRECISION", "ARRAY", "JSON", "JSONB",
-		"GRANT", "REVOKE", "TO", "WITH", "RECURSIVE", "DISTINCT", "ASC", "DESC",
-	}
-
-	// Common SQL functions
-	functions := []string{
-		"COUNT", "SUM", "AVG", "MIN", "MAX", "CONCAT", "SUBSTRING", "LENGTH",
-		"UPPER", "LOWER", "TRIM", "COALESCE", "NULLIF", "NOW", "CURRENT_TIMESTAMP",
-		"CURRENT_DATE", "EXTRACT", "DATE_PART", "AGE", "ARRAY_AGG", "STRING_AGG",
-	}
-
-	// Highlight keywords
-	for _, kw := range keywords {
-		// Match whole words only (case-insensitive)
-		re := regexp.MustCompile(`(?i)\b` + kw + `\b`)
-		line = re.ReplaceAllStringFunc(line, func(match string) string {
-			return `<span class="sql-keyword">` + match + `</span>`
-		})
-	}
-
-	// Highlight functions
-	for _, fn := range functions {
-		re := regexp.MustCompile(`(?i)\b` + fn + `\s*\(`)
-		line = re.ReplaceAllStringFunc(line, func(match string) string {
-			return `<span class="sql-function">` + match[:len(match)-1] + `</span>(`
-		})
-	}
-
-	// Highlight strings (single quotes)
-	stringRe := regexp.MustCompile(`'[^']*'`)
-	line = stringRe.ReplaceAllStringFunc(line, func(match string) string {
-		return `<span class="sql-string">` + match + `</span>`
-	})
-
-	// Highlight comments (-- style)
-	commentRe := regexp.MustCompile(`--.*$`)
-	line = commentRe.ReplaceAllStringFunc(line, func(match string) string {
-		return `<span class="sql-comment">` + match + `</span>`
-	})
-
-	// Highlight numbers
-	numberRe := regexp.MustCompile(`\b\d+(\.\d+)?\b`)
-	line = numberRe.ReplaceAllStringFunc(line, func(match string) string {
-		// Skip if already inside a span (e.g., from previous highlighting)
-		return `<span class="sql-number">` + match + `</span>`
-	})
-
-	return line
 }
 
 // writeFooter writes the HTML document footer with JavaScript

@@ -30,7 +30,7 @@ func TestInstrument_BasicSQL(t *testing.T) {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := Instrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -74,7 +74,7 @@ $$ LANGUAGE plpgsql;`
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := Instrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -112,7 +112,7 @@ SELECT 3;`
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := Instrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -143,7 +143,7 @@ func TestInstrument_EmptyFile(t *testing.T) {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := Instrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -174,7 +174,7 @@ func TestInstrument_CommentsOnly(t *testing.T) {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := Instrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -205,7 +205,7 @@ func TestInstrument_SignalIDFormat(t *testing.T) {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := Instrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -252,7 +252,7 @@ func TestInstrumentBatch(t *testing.T) {
 		parsedFiles = append(parsedFiles, parsed)
 	}
 
-	instrumented, err := InstrumentBatch(parsedFiles)
+	instrumented, err := GenerateCoverageInstruments(parsedFiles)
 	if err != nil {
 		t.Fatalf("InstrumentBatch() error = %v", err)
 	}
@@ -282,7 +282,7 @@ func TestGetCoveragePointBySignal(t *testing.T) {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := Instrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -296,9 +296,7 @@ func TestGetCoveragePointBySignal(t *testing.T) {
 	cp := GetCoveragePointBySignal(instrumented, signal)
 	if cp == nil {
 		t.Errorf("GetCoveragePointBySignal() returned nil for signal %q", signal)
-	}
-
-	if cp.SignalID != signal {
+	} else if cp.SignalID != signal {
 		t.Errorf("GetCoveragePointBySignal() got signal %q, want %q", cp.SignalID, signal)
 	}
 
@@ -310,7 +308,7 @@ func TestGetCoveragePointBySignal(t *testing.T) {
 }
 
 func TestInstrument_NilInput(t *testing.T) {
-	_, err := Instrument(nil)
+	_, err := GenerateCoverageInstrument(nil)
 	if err == nil {
 		t.Error("Instrument() expected error for nil input, got nil")
 	}
@@ -373,7 +371,7 @@ func TestInstrument_DifferentStatementTypes(t *testing.T) {
 				t.Fatalf("Parse() error = %v", err)
 			}
 
-			instrumented, err := Instrument(parsed)
+			instrumented, err := GenerateCoverageInstrument(parsed)
 			if err != nil {
 				t.Fatalf("Instrument() error = %v", err)
 			}

@@ -5,12 +5,36 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/cybertec-postgresql/pgcov/internal/errors"
 	"github.com/cybertec-postgresql/pgcov/pkg/types"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const applicationName = "pgcov"
+
+// ConnectionError represents PostgreSQL connection failure
+type ConnectionError struct {
+	Host       string
+	Port       int
+	Message    string
+	Suggestion string
+}
+
+func (e *ConnectionError) Error() string {
+	msg := fmt.Sprintf("failed to connect to %s:%d: %s", e.Host, e.Port, e.Message)
+	if e.Suggestion != "" {
+		msg += fmt.Sprintf("\nSuggestion: %s", e.Suggestion)
+	}
+	return msg
+}
+
+// NewConnectionError creates a new ConnectionError
+func NewConnectionError(host string, port int, message string) *ConnectionError {
+	return &ConnectionError{
+		Host:    host,
+		Port:    port,
+		Message: message,
+	}
+}
 
 // Pool wraps pgxpool.Pool with additional functionality
 type Pool struct {
@@ -26,7 +50,7 @@ func NewPool(ctx context.Context, config *types.Config) (*Pool, error) {
 	// Configure pool
 	poolConfig, err := pgxpool.ParseConfig(connString)
 	if err != nil {
-		return nil, &errors.ConnectionError{
+		return nil, &ConnectionError{
 			Message:    fmt.Sprintf("invalid connection configuration: %v", err),
 			Suggestion: "Check your PostgreSQL connection string format. Use URI format (postgresql://user:pass@host:port/db) or key=value format (host=localhost port=5432 ...)",
 		}
@@ -45,7 +69,7 @@ func NewPool(ctx context.Context, config *types.Config) (*Pool, error) {
 	// Create pool
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
-		return nil, &errors.ConnectionError{
+		return nil, &ConnectionError{
 			Message:    fmt.Sprintf("failed to create connection pool: %v", err),
 			Suggestion: "Verify PostgreSQL is running and accessible with the provided connection string",
 		}
@@ -56,7 +80,7 @@ func NewPool(ctx context.Context, config *types.Config) (*Pool, error) {
 	err = pool.QueryRow(ctx, "SHOW server_version_num").Scan(&versionStr)
 	if err != nil {
 		pool.Close()
-		return nil, &errors.ConnectionError{
+		return nil, &ConnectionError{
 			Message: fmt.Sprintf("failed to query PostgreSQL version: %v", err),
 		}
 	}
@@ -64,7 +88,7 @@ func NewPool(ctx context.Context, config *types.Config) (*Pool, error) {
 	version, err := strconv.Atoi(versionStr)
 	if err != nil {
 		pool.Close()
-		return nil, &errors.ConnectionError{
+		return nil, &ConnectionError{
 			Message: fmt.Sprintf("failed to parse PostgreSQL version '%s': %v", versionStr, err),
 		}
 	}
@@ -72,7 +96,7 @@ func NewPool(ctx context.Context, config *types.Config) (*Pool, error) {
 	// PostgreSQL 13+ required (version 130000+)
 	if version < 130000 {
 		pool.Close()
-		return nil, &errors.ConnectionError{
+		return nil, &ConnectionError{
 			Message:    fmt.Sprintf("PostgreSQL version %d is not supported (need 13+)", version/10000),
 			Suggestion: "Upgrade to PostgreSQL 13 or later",
 		}

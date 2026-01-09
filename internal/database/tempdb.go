@@ -75,16 +75,11 @@ func DestroyTempDatabase(ctx context.Context, pool *Pool, tempDB *types.TempData
 	defer conn.Release()
 
 	// Terminate all connections to the database first (PostgreSQL 13+)
-	terminateSQL := fmt.Sprintf(`
-		SELECT pg_terminate_backend(pid)
+	terminateSQL := `SELECT pg_terminate_backend(pid)
 		FROM pg_stat_activity
-		WHERE datname = '%s' AND pid <> pg_backend_pid()
-	`, tempDB.Name)
+		WHERE datname = $1 AND pid <> pg_backend_pid()`
 
-	_, err = conn.Exec(ctx, terminateSQL)
-	if err != nil {
-		// Non-fatal - database might not have any connections
-	}
+	_, _ = conn.Exec(ctx, terminateSQL, tempDB.Name)
 
 	// Drop database with FORCE option (PostgreSQL 13+)
 	dropSQL := fmt.Sprintf("DROP DATABASE IF EXISTS %s WITH (FORCE)", tempDB.Name)
@@ -127,7 +122,7 @@ func verifyDatabaseDropped(ctx context.Context, conn *pgxpool.Conn, dbName strin
 // CleanupStaleTempDatabases removes old pgcov temporary databases
 // This is useful for cleanup after crashes or interrupted test runs
 // Returns list of cleaned databases and any errors encountered
-func CleanupStaleTempDatabases(ctx context.Context, pool *Pool, olderThan time.Duration) ([]string, error) {
+func CleanupStaleTempDatabases(ctx context.Context, pool *Pool, _ time.Duration) ([]string, error) {
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire connection: %w", err)

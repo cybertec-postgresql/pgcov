@@ -63,7 +63,7 @@ func TestParallelExecution(t *testing.T) {
 		parsedSources = append(parsedSources, parsed)
 	}
 
-	instrumentedSources, err := instrument.InstrumentBatch(parsedSources)
+	instrumentedSources, err := instrument.GenerateCoverageInstruments(parsedSources)
 	if err != nil {
 		t.Fatalf("Failed to instrument sources: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestParallelExecutionAccuracy(t *testing.T) {
 		parsedSources = append(parsedSources, parsed)
 	}
 
-	instrumentedSources, err := instrument.InstrumentBatch(parsedSources)
+	instrumentedSources, err := instrument.GenerateCoverageInstruments(parsedSources)
 	if err != nil {
 		t.Fatalf("Failed to instrument: %v", err)
 	}

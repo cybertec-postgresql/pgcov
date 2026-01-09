@@ -57,7 +57,7 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	}
 
 	// Step 4: Instrument source files
-	instrumentedSources, err := instrument.InstrumentBatch(parsedSources)
+	instrumentedSources, err := instrument.GenerateCoverageInstruments(parsedSources)
 	if err != nil {
 		return 1, fmt.Errorf("failed to instrument sources: %w", err)
 	}

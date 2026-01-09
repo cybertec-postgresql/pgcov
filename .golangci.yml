@@ -1,0 +1,39 @@
+version: "2"
+linters:
+  enable:
+    - misspell
+    - revive
+  disable:
+    - gocyclo
+  settings:
+    gocyclo:
+      min-complexity: 20
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - path: (.+)\.go$
+        text: SA1019    # CPUTimesStat.Total is deprecated
+      - path: (.+)\.go$
+        text: SA5008    # duplicate struct tag "choice" (staticcheck)
+      - path: (.+)\.go$
+        text: QF1001    # could apply De Morgan's law
+      - path: pkg/
+        text: "var-naming: avoid meaningless package names"
+        linters:
+          - revive
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
