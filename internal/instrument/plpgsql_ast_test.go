@@ -202,7 +202,7 @@ $$ LANGUAGE plpgsql;`
 
 	// With AST-only approach, may return no instrumentation for malformed SQL
 	if instrumented == nil {
-		t.Error("Instrument() returned nil")
+		t.Fatal("Instrument() returned nil")
 	}
 	t.Logf("Coverage points: %d (may be 0 for malformed SQL)", len(instrumented.Locations))
 }
