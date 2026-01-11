@@ -76,11 +76,14 @@ func (wp *WorkerPool) ExecuteParallel(ctx context.Context, testFiles []discovery
 	for result := range results {
 		testRuns[result.index] = result.run
 		if wp.verbose {
-			status := "PASS"
-			if result.run.Status == TestFailed {
+			var status string
+			switch result.run.Status {
+			case TestFailed:
 				status = "FAIL"
-			} else if result.run.Status == TestTimeout {
+			case TestTimeout:
 				status = "TIMEOUT"
+			default:
+				status = "PASS"
 			}
 			fmt.Printf("[%s] %s (worker %d)\n", status, result.run.Test.RelativePath, result.workerID)
 		}

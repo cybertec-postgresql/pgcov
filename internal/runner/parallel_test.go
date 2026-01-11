@@ -11,34 +11,29 @@ import (
 	"github.com/cybertec-postgresql/pgcov/internal/instrument"
 	"github.com/cybertec-postgresql/pgcov/internal/parser"
 	"github.com/cybertec-postgresql/pgcov/internal/runner"
+	"github.com/cybertec-postgresql/pgcov/internal/testutil"
 	"github.com/cybertec-postgresql/pgcov/pkg/types"
 )
 
 // TestParallelExecution tests that parallel execution produces correct results
 func TestParallelExecution(t *testing.T) {
-	// Skip if no PostgreSQL available
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+	connString, cleanup := testutil.SetupPostgresContainer(t)
+	defer cleanup()
 
 	ctx := context.Background()
 
 	// Setup config
 	config := &types.Config{
-		PGHost:      "localhost",
-		PGPort:      5432,
-		PGUser:      "postgres",
-		PGPassword:  "",
-		PGDatabase:  "postgres",
-		Timeout:     30 * time.Second,
-		Parallelism: 4, // Use 4 workers
-		Verbose:     testing.Verbose(),
+		ConnectionString: connString,
+		Timeout:          30 * time.Second,
+		Parallelism:      4, // Use 4 workers
+		Verbose:          testing.Verbose(),
 	}
 
 	// Connect to database
 	pool, err := database.NewPool(ctx, config)
 	if err != nil {
-		t.Skipf("Cannot connect to PostgreSQL: %v", err)
+		t.Fatalf("Cannot connect to PostgreSQL: %v", err)
 	}
 	defer pool.Close()
 
@@ -68,7 +63,7 @@ func TestParallelExecution(t *testing.T) {
 		parsedSources = append(parsedSources, parsed)
 	}
 
-	instrumentedSources, err := instrument.InstrumentBatch(parsedSources)
+	instrumentedSources, err := instrument.GenerateCoverageInstruments(parsedSources)
 	if err != nil {
 		t.Fatalf("Failed to instrument sources: %v", err)
 	}
@@ -150,26 +145,21 @@ func TestParallelExecution(t *testing.T) {
 
 // TestParallelExecutionAccuracy verifies coverage accuracy with parallel execution
 func TestParallelExecutionAccuracy(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+	connString, cleanup := testutil.SetupPostgresContainer(t)
+	defer cleanup()
 
 	ctx := context.Background()
 
 	config := &types.Config{
-		PGHost:      "localhost",
-		PGPort:      5432,
-		PGUser:      "postgres",
-		PGPassword:  "",
-		PGDatabase:  "postgres",
-		Timeout:     30 * time.Second,
-		Parallelism: 2,
-		Verbose:     testing.Verbose(),
+		ConnectionString: connString,
+		Timeout:          30 * time.Second,
+		Parallelism:      2,
+		Verbose:          testing.Verbose(),
 	}
 
 	pool, err := database.NewPool(ctx, config)
 	if err != nil {
-		t.Skipf("Cannot connect to PostgreSQL: %v", err)
+		t.Fatalf("Cannot connect to PostgreSQL: %v", err)
 	}
 	defer pool.Close()
 
@@ -193,7 +183,7 @@ func TestParallelExecutionAccuracy(t *testing.T) {
 		parsedSources = append(parsedSources, parsed)
 	}
 
-	instrumentedSources, err := instrument.InstrumentBatch(parsedSources)
+	instrumentedSources, err := instrument.GenerateCoverageInstruments(parsedSources)
 	if err != nil {
 		t.Fatalf("Failed to instrument: %v", err)
 	}

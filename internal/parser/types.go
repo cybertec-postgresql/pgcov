@@ -1,9 +1,33 @@
 package parser
 
 import (
+	"fmt"
+
 	"github.com/cybertec-postgresql/pgcov/internal/discovery"
 	pgquery "github.com/pganalyze/pg_query_go/v6"
 )
+
+// ParseError represents SQL parsing failure
+type ParseError struct {
+	File    string
+	Line    int
+	Column  int
+	Message string
+}
+
+func (e *ParseError) Error() string {
+	return fmt.Sprintf("%s:%d:%d: %s", e.File, e.Line, e.Column, e.Message)
+}
+
+// NewParseError creates a new ParseError
+func NewParseError(file string, line, column int, message string) *ParseError {
+	return &ParseError{
+		File:    file,
+		Line:    line,
+		Column:  column,
+		Message: message,
+	}
+}
 
 // ParsedSQL represents a successfully parsed SQL file with AST
 type ParsedSQL struct {

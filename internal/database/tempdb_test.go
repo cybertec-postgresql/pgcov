@@ -2,54 +2,40 @@ package database
 
 import (
 	"context"
-	"os"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/cybertec-postgresql/pgcov/internal/testutil"
 	"github.com/cybertec-postgresql/pgcov/pkg/types"
 )
 
-// skipIfNoPostgres skips the test if PostgreSQL is not available
-func skipIfNoPostgres(t *testing.T) *Pool {
+// setupPostgresPool starts a PostgreSQL container and returns a Pool connected to it
+func setupPostgresPool(t *testing.T) (*Pool, func()) {
 	t.Helper()
 
-	// Use environment variables if available, otherwise use defaults
-	pgPort := 5432
-	if portStr := os.Getenv("PGPORT"); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			pgPort = p
-		}
-	}
+	connString, cleanup := testutil.SetupPostgresContainer(t)
 
 	config := &types.Config{
-		PGHost:     getEnv("PGHOST", "localhost"),
-		PGPort:     pgPort,
-		PGUser:     getEnv("PGUSER", "postgres"),
-		PGPassword: getEnv("PGPASSWORD", ""),
-		PGDatabase: getEnv("PGDATABASE", "postgres"),
+		ConnectionString: connString,
 	}
 
 	ctx := context.Background()
 	pool, err := NewPool(ctx, config)
 	if err != nil {
-		t.Skipf("PostgreSQL not available: %v", err)
+		cleanup()
+		t.Fatalf("Failed to create pool: %v", err)
 	}
 
-	return pool
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+	return pool, func() {
+		pool.Close()
+		cleanup()
 	}
-	return defaultValue
 }
 
 func TestCreateTempDatabase(t *testing.T) {
-	pool := skipIfNoPostgres(t)
-	defer pool.Close()
+	pool, cleanup := setupPostgresPool(t)
+	defer cleanup()
 
 	ctx := context.Background()
 
@@ -84,8 +70,8 @@ func TestCreateTempDatabase(t *testing.T) {
 }
 
 func TestDestroyTempDatabase(t *testing.T) {
-	pool := skipIfNoPostgres(t)
-	defer pool.Close()
+	pool, cleanup := setupPostgresPool(t)
+	defer cleanup()
 
 	ctx := context.Background()
 
@@ -120,8 +106,8 @@ func TestDestroyTempDatabase(t *testing.T) {
 }
 
 func TestDestroyTempDatabase_Nil(t *testing.T) {
-	pool := skipIfNoPostgres(t)
-	defer pool.Close()
+	pool, cleanup := setupPostgresPool(t)
+	defer cleanup()
 
 	ctx := context.Background()
 
@@ -133,8 +119,8 @@ func TestDestroyTempDatabase_Nil(t *testing.T) {
 }
 
 func TestCreateTempDatabase_UniqueName(t *testing.T) {
-	pool := skipIfNoPostgres(t)
-	defer pool.Close()
+	pool, cleanup := setupPostgresPool(t)
+	defer cleanup()
 
 	ctx := context.Background()
 
@@ -166,8 +152,8 @@ func TestCreateTempDatabase_UniqueName(t *testing.T) {
 }
 
 func TestCreateTempDatabase_Concurrent(t *testing.T) {
-	pool := skipIfNoPostgres(t)
-	defer pool.Close()
+	pool, cleanup := setupPostgresPool(t)
+	defer cleanup()
 
 	ctx := context.Background()
 
@@ -218,8 +204,8 @@ func TestCreateTempDatabase_Concurrent(t *testing.T) {
 }
 
 func TestCleanupStaleTempDatabases(t *testing.T) {
-	pool := skipIfNoPostgres(t)
-	defer pool.Close()
+	pool, cleanup := setupPostgresPool(t)
+	defer cleanup()
 
 	ctx := context.Background()
 
@@ -265,8 +251,8 @@ func TestCleanupStaleTempDatabases(t *testing.T) {
 }
 
 func TestTempDatabase_Lifecycle(t *testing.T) {
-	pool := skipIfNoPostgres(t)
-	defer pool.Close()
+	pool, cleanup := setupPostgresPool(t)
+	defer cleanup()
 
 	ctx := context.Background()
 

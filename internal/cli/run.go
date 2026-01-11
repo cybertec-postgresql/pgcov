@@ -57,7 +57,7 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	}
 
 	// Step 4: Instrument source files
-	instrumentedSources, err := instrument.InstrumentBatch(parsedSources)
+	instrumentedSources, err := instrument.GenerateCoverageInstruments(parsedSources)
 	if err != nil {
 		return 1, fmt.Errorf("failed to instrument sources: %w", err)
 	}
@@ -70,7 +70,7 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	defer pool.Close()
 
 	if config.Verbose {
-		fmt.Printf("Connected to PostgreSQL at %s:%d\n", config.PGHost, config.PGPort)
+		fmt.Println("Connected to PostgreSQL")
 	}
 
 	// Step 6: Execute tests (parallel or sequential based on config)

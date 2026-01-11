@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -9,7 +10,7 @@ import (
 )
 
 // Report generates a coverage report from saved coverage data
-func Report(coverageFile string, format string, outputPath string) error {
+func Report(_ context.Context, coverageFile string, format string, outputPath string) error {
 	// Step 1: Load coverage data
 	store := coverage.NewStore(coverageFile)
 	if !store.Exists() {

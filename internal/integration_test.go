@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -60,16 +61,14 @@ func TestEndToEndWithTestcontainers(t *testing.T) {
 	t.Logf("PostgreSQL running at %s:%s", host, port.Port())
 
 	// Create test configuration
+	connString := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=prefer",
+		host, port.Port())
 	config := &types.Config{
-		PGHost:       host,
-		PGPort:       port.Int(),
-		PGUser:       "testuser",
-		PGPassword:   "testpass",
-		PGDatabase:   "testdb",
-		Timeout:      30 * time.Second,
-		Parallelism:  1,
-		CoverageFile: "coverage.json",
-		Verbose:      true,
+		ConnectionString: connString,
+		Timeout:          30 * time.Second,
+		Parallelism:      1,
+		CoverageFile:     "coverage.json",
+		Verbose:          true,
 	}
 
 	// Test Phase 1: Discovery
@@ -131,7 +130,7 @@ func TestEndToEndWithTestcontainers(t *testing.T) {
 
 		for _, file := range sourceFiles {
 			parsed, _ := parser.Parse(&file)
-			instrumented, err := instrument.Instrument(parsed)
+			instrumented, err := instrument.GenerateCoverageInstrument(parsed)
 			if err != nil {
 				t.Fatalf("Failed to instrument %s: %v", file.RelativePath, err)
 			}
@@ -230,14 +229,14 @@ func TestEndToEndWithTestcontainers(t *testing.T) {
 		_, _ = cli.Run(ctx, config, testDir)
 
 		// Test JSON report
-		err := cli.Report(config.CoverageFile, "json", "-")
+		err := cli.Report(t.Context(), config.CoverageFile, "json", "-")
 		if err != nil {
 			t.Fatalf("Failed to generate JSON report: %v", err)
 		}
 
 		// Test LCOV report
 		lcovFile := filepath.Join(t.TempDir(), "coverage.lcov")
-		err = cli.Report(config.CoverageFile, "lcov", lcovFile)
+		err = cli.Report(t.Context(), config.CoverageFile, "lcov", lcovFile)
 		if err != nil {
 			t.Fatalf("Failed to generate LCOV report: %v", err)
 		}
@@ -281,13 +280,11 @@ func TestRunnerIsolation(t *testing.T) {
 	host, _ := pgContainer.Host(ctx)
 	port, _ := pgContainer.MappedPort(ctx, "5432")
 
+	connString := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=prefer",
+		host, port.Port())
 	config := &types.Config{
-		PGHost:     host,
-		PGPort:     port.Int(),
-		PGUser:     "testuser",
-		PGPassword: "testpass",
-		PGDatabase: "testdb",
-		Timeout:    30 * time.Second,
+		ConnectionString: connString,
+		Timeout:          30 * time.Second,
 	}
 
 	// Create connection pool
@@ -316,8 +313,12 @@ func TestRunnerIsolation(t *testing.T) {
 	t.Logf("Created isolated databases: %s and %s", db1.Name, db2.Name)
 
 	// Cleanup
-	database.DestroyTempDatabase(ctx, pool, db1)
-	database.DestroyTempDatabase(ctx, pool, db2)
+	if err := database.DestroyTempDatabase(ctx, pool, db1); err != nil {
+		t.Logf("Warning: failed to cleanup db1: %v", err)
+	}
+	if err := database.DestroyTempDatabase(ctx, pool, db2); err != nil {
+		t.Logf("Warning: failed to cleanup db2: %v", err)
+	}
 
 	t.Log("✓ Isolation test passed!")
 }
@@ -351,16 +352,14 @@ func TestOrderIndependence(t *testing.T) {
 	host, _ := pgContainer.Host(ctx)
 	port, _ := pgContainer.MappedPort(ctx, "5432")
 
+	connString := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=prefer",
+		host, port.Port())
 	config := &types.Config{
-		PGHost:       host,
-		PGPort:       port.Int(),
-		PGUser:       "testuser",
-		PGPassword:   "testpass",
-		PGDatabase:   "testdb",
-		Timeout:      30 * time.Second,
-		Parallelism:  1,
-		CoverageFile: filepath.Join(t.TempDir(), "coverage.json"),
-		Verbose:      true,
+		ConnectionString: connString,
+		Timeout:          30 * time.Second,
+		Parallelism:      1,
+		CoverageFile:     filepath.Join(t.TempDir(), "coverage.json"),
+		Verbose:          true,
 	}
 
 	testDir := "../testdata/simple"
@@ -392,7 +391,7 @@ func TestOrderIndependence(t *testing.T) {
 		parsedSources = append(parsedSources, parsed)
 	}
 
-	instrumentedSources, err := instrument.InstrumentBatch(parsedSources)
+	instrumentedSources, err := instrument.GenerateCoverageInstruments(parsedSources)
 	if err != nil {
 		t.Fatalf("Failed to instrument sources: %v", err)
 	}
@@ -541,16 +540,14 @@ func TestTestIndependence(t *testing.T) {
 	host, _ := pgContainer.Host(ctx)
 	port, _ := pgContainer.MappedPort(ctx, "5432")
 
+	connString := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=prefer",
+		host, port.Port())
 	config := &types.Config{
-		PGHost:       host,
-		PGPort:       port.Int(),
-		PGUser:       "testuser",
-		PGPassword:   "testpass",
-		PGDatabase:   "testdb",
-		Timeout:      30 * time.Second,
-		Parallelism:  1,
-		CoverageFile: filepath.Join(t.TempDir(), "coverage.json"),
-		Verbose:      true,
+		ConnectionString: connString,
+		Timeout:          30 * time.Second,
+		Parallelism:      1,
+		CoverageFile:     filepath.Join(t.TempDir(), "coverage.json"),
+		Verbose:          true,
 	}
 
 	testDir := "../testdata/isolation"
@@ -584,7 +581,7 @@ func TestTestIndependence(t *testing.T) {
 		parsedSources = append(parsedSources, parsed)
 	}
 
-	instrumentedSources, err := instrument.InstrumentBatch(parsedSources)
+	instrumentedSources, err := instrument.GenerateCoverageInstruments(parsedSources)
 	if err != nil {
 		t.Fatalf("Failed to instrument sources: %v", err)
 	}

@@ -7,18 +7,12 @@ import (
 	"github.com/cybertec-postgresql/pgcov/internal/parser"
 )
 
-// Instrument takes parsed SQL and injects coverage tracking calls
-func Instrument(parsed *parser.ParsedSQL) (*InstrumentedSQL, error) {
-	// Use full instrumentation with NOTIFY injection
-	return InstrumentWithNotify(parsed)
-}
-
-// InstrumentBatch instruments multiple parsed SQL files
-func InstrumentBatch(parsedFiles []*parser.ParsedSQL) ([]*InstrumentedSQL, error) {
+// GenerateCoverageInstruments instruments multiple parsed SQL files
+func GenerateCoverageInstruments(parsedFiles []*parser.ParsedSQL) ([]*InstrumentedSQL, error) {
 	var instrumented []*InstrumentedSQL
 
 	for _, parsed := range parsedFiles {
-		inst, err := Instrument(parsed)
+		inst, err := GenerateCoverageInstrument(parsed)
 		if err != nil {
 			return nil, fmt.Errorf("failed to instrument %s: %w", parsed.File.Path, err)
 		}
@@ -39,7 +33,7 @@ func GetCoveragePointBySignal(instrumented *InstrumentedSQL, signalID string) *C
 }
 
 // InstrumentWithNotify instruments SQL by injecting NOTIFY calls for coverage tracking
-func InstrumentWithNotify(parsed *parser.ParsedSQL) (*InstrumentedSQL, error) {
+func GenerateCoverageInstrument(parsed *parser.ParsedSQL) (*InstrumentedSQL, error) {
 	if parsed == nil || parsed.File == nil {
 		return nil, fmt.Errorf("parsed SQL or file is nil")
 	}
@@ -262,30 +256,4 @@ func markStatementLinesAsCovered(stmt *parser.Statement, filePath string) []Cove
 	}
 
 	return locations
-}
-
-func readOriginalSQL(parsed *parser.ParsedSQL) string {
-	if len(parsed.Statements) == 0 {
-		return ""
-	}
-	var parts []string
-	for _, stmt := range parsed.Statements {
-		parts = append(parts, stmt.RawSQL)
-	}
-	return strings.Join(parts, "\n")
-}
-
-func findStatementPosition(sql string, lineNum int) int {
-	if lineNum <= 1 {
-		return 0
-	}
-	pos := 0
-	currentLine := 1
-	for i := 0; i < len(sql) && currentLine < lineNum; i++ {
-		if sql[i] == '\n' {
-			currentLine++
-			pos = i + 1
-		}
-	}
-	return pos
 }

@@ -60,8 +60,10 @@ func (c *Coverage) AddLine(file string, line int, hitCount int) {
 }
 
 // AddBranch adds or updates branch coverage data (placeholder for future)
-func (c *Coverage) AddBranch(file string, branchID string, hitCount int) {
+func (c *Coverage) AddBranch(_ string, branchID string, hitCount int) {
 	// TODO: Implement branch coverage tracking
+	_ = branchID
+	_ = hitCount
 }
 
 // LineCoveragePercent calculates the line coverage percentage for a file

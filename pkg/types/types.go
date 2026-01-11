@@ -8,11 +8,7 @@ import (
 // Config holds runtime configuration combining flags, environment variables, and defaults
 type Config struct {
 	// PostgreSQL connection
-	PGHost     string
-	PGPort     int
-	PGUser     string
-	PGPassword string
-	PGDatabase string // Template database for creating temp DBs
+	ConnectionString string // PostgreSQL connection string (URI or key=value format)
 
 	// Execution
 	SearchPath  string        // Root path for test/source discovery
@@ -45,13 +41,12 @@ func (e *ConfigError) Error() string {
 
 // Validate checks configuration for errors and returns helpful error messages
 func (c *Config) Validate() error {
-	// Validate PostgreSQL port
-	if c.PGPort <= 0 || c.PGPort > 65535 {
+	// Validate connection string
+	if c.ConnectionString == "" {
 		return &ConfigError{
-			Field:      "port",
-			Value:      c.PGPort,
-			Message:    fmt.Sprintf("invalid port number: %d", c.PGPort),
-			Suggestion: "Port must be between 1 and 65535. Default PostgreSQL port is 5432. Set via --port flag or PGPORT environment variable.",
+			Field:      "connection",
+			Message:    "PostgreSQL connection string is required",
+			Suggestion: "Set via --connection flag or standard PG* environment variables (PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE).",
 		}
 	}
 
@@ -85,22 +80,6 @@ func (c *Config) Validate() error {
 	}
 
 	// Validate required fields
-	if c.PGHost == "" {
-		return &ConfigError{
-			Field:      "host",
-			Message:    "PostgreSQL host is required",
-			Suggestion: "Set via --host flag or PGHOST environment variable. Default is 'localhost'.",
-		}
-	}
-
-	if c.PGDatabase == "" {
-		return &ConfigError{
-			Field:      "database",
-			Message:    "template database is required",
-			Suggestion: "Set via --database flag or PGDATABASE environment variable. Default is 'postgres'.",
-		}
-	}
-
 	if c.CoverageFile == "" {
 		return &ConfigError{
 			Field:      "coverage-file",

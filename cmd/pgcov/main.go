@@ -23,24 +23,9 @@ func main() {
 				Action: runCommand,
 				Flags: []urfavecli.Flag{
 					&urfavecli.StringFlag{
-						Name:  "host",
-						Usage: "PostgreSQL host",
-					},
-					&urfavecli.IntFlag{
-						Name:  "port",
-						Usage: "PostgreSQL port",
-					},
-					&urfavecli.StringFlag{
-						Name:  "user",
-						Usage: "PostgreSQL user",
-					},
-					&urfavecli.StringFlag{
-						Name:  "password",
-						Usage: "PostgreSQL password",
-					},
-					&urfavecli.StringFlag{
-						Name:  "database",
-						Usage: "Template database for test databases",
+						Name:    "connection",
+						Aliases: []string{"c"},
+						Usage:   "PostgreSQL connection string (URI or key=value format). Supports standard PG* environment variables.",
 					},
 					&urfavecli.DurationFlag{
 						Name:  "timeout",
@@ -95,20 +80,16 @@ func main() {
 // runCommand handles the 'pgcov run' command
 func runCommand(ctx context.Context, cmd *urfavecli.Command) error {
 	// Load configuration
-	config := cli.LoadConfig()
+	config := &cli.DefaultConfig
 
 	// Apply flags
-	host := cmd.String("host")
-	port := cmd.Int("port")
-	user := cmd.String("user")
-	password := cmd.String("password")
-	database := cmd.String("database")
+	connection := cmd.String("connection")
 	timeout := cmd.Duration("timeout")
 	parallel := cmd.Int("parallel")
 	coverageFile := cmd.String("coverage-file")
 	verbose := cmd.Bool("verbose")
 
-	cli.ApplyFlagsToConfig(config, host, port, user, password, database, timeout, parallel, coverageFile, verbose)
+	cli.ApplyFlagsToConfig(config, connection, timeout, parallel, coverageFile, verbose)
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {
@@ -142,5 +123,5 @@ func reportCommand(ctx context.Context, cmd *urfavecli.Command) error {
 	output := cmd.String("output")
 	coverageFile := cmd.String("coverage-file")
 
-	return cli.Report(coverageFile, format, output)
+	return cli.Report(ctx, coverageFile, format, output)
 }

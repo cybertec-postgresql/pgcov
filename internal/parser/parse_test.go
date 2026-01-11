@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/cybertec-postgresql/pgcov/internal/discovery"
-	pgcoVerrors "github.com/cybertec-postgresql/pgcov/internal/errors"
 )
 
 func TestParse_ValidSQL(t *testing.T) {
@@ -121,7 +120,7 @@ func TestParse_SyntaxError(t *testing.T) {
 			}
 
 			// Check error type
-			var parseErr *pgcoVerrors.ParseError
+			var parseErr *ParseError
 			if !errors.As(err, &parseErr) {
 				t.Errorf("Parse() error type = %T, want *errors.ParseError", err)
 			}
@@ -277,7 +276,7 @@ func TestParseSQL(t *testing.T) {
 			}
 
 			if tt.wantErr {
-				var parseErr *pgcoVerrors.ParseError
+				var parseErr *ParseError
 				if !errors.As(err, &parseErr) {
 					t.Errorf("ParseSQL() error type = %T, want *errors.ParseError", err)
 				}
