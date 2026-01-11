@@ -38,10 +38,11 @@ type ParsedSQL struct {
 
 // Statement represents a single SQL statement with location information
 type Statement struct {
-	RawSQL    string        // Original SQL text
-	StartLine int           // 1-indexed line number
-	EndLine   int           // 1-indexed line number
-	Type      StatementType // Statement classification
+	RawSQL    string           // Original SQL text
+	StartLine int              // 1-indexed line number
+	EndLine   int              // 1-indexed line number
+	Type      StatementType    // Statement classification
+	Node      *pgquery.Node    // Parsed AST node
 }
 
 // StatementType classifies SQL statements

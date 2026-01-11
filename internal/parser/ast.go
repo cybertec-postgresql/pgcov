@@ -41,6 +41,7 @@ func ExtractStatements(sql string, result *pgquery.ParseResult) ([]*Statement, e
 			StartLine: startLine,
 			EndLine:   endLine,
 			Type:      stmtType,
+			Node:      stmt.Stmt,
 		})
 	}
 

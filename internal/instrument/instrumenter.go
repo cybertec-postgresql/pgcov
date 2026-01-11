@@ -1,10 +1,12 @@
 package instrument
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/cybertec-postgresql/pgcov/internal/parser"
+	pgquery "github.com/pganalyze/pg_query_go/v6"
 )
 
 // GenerateCoverageInstruments instruments multiple parsed SQL files
@@ -68,20 +70,26 @@ func GenerateCoverageInstrument(parsed *parser.ParsedSQL) (*InstrumentedSQL, err
 func instrumentStatement(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
 	var locations []CoveragePoint
 
-	// For PL/pgSQL functions, instrument each line
-	if stmt.Type == parser.StmtFunction && strings.Contains(strings.ToUpper(stmt.RawSQL), "LANGUAGE PLPGSQL") {
-		instrumented, locs := instrumentPlpgsqlFunction(stmt, filePath)
-		return instrumented, locs
+	// For functions, determine the language from AST
+	if stmt.Type == parser.StmtFunction {
+		funcLang := getFunctionLanguage(stmt)
+
+		switch funcLang {
+		case "plpgsql":
+			instrumented, locs := instrumentPlpgsqlFunction(stmt, filePath)
+			return instrumented, locs
+		case "sql":
+			instrumented, locs := instrumentSQLFunction(stmt, filePath)
+			return instrumented, locs
+		default:
+			// Unknown language, mark as implicitly covered
+			locations = markStatementLinesAsCovered(stmt, filePath)
+			return stmt.RawSQL, locations
+		}
 	}
 
-	// For SQL functions (LANGUAGE SQL), instrument the statement
-	if stmt.Type == parser.StmtFunction && strings.Contains(strings.ToUpper(stmt.RawSQL), "LANGUAGE SQL") {
-		instrumented, locs := instrumentSQLFunction(stmt, filePath)
-		return instrumented, locs
-	}
-
-	// For DO blocks with PL/pgSQL, instrument like a function
-	if strings.HasPrefix(strings.TrimSpace(strings.ToUpper(stmt.RawSQL)), "DO") {
+	// For DO blocks, check if they're PL/pgSQL
+	if isDOBlock(stmt) {
 		instrumented, locs := instrumentPlpgsqlFunction(stmt, filePath)
 		return instrumented, locs
 	}
@@ -94,79 +102,354 @@ func instrumentStatement(stmt *parser.Statement, filePath string) (string, []Cov
 	return stmt.RawSQL, locations
 }
 
+// getFunctionLanguage extracts the language from a CREATE FUNCTION statement using the AST node
+func getFunctionLanguage(stmt *parser.Statement) string {
+	if stmt.Node == nil {
+		return ""
+	}
+
+	if createFunc, ok := stmt.Node.Node.(*pgquery.Node_CreateFunctionStmt); ok {
+		if createFunc.CreateFunctionStmt != nil {
+			// Look for the LANGUAGE option in the function definition
+			for _, opt := range createFunc.CreateFunctionStmt.Options {
+				if opt.GetDefElem() != nil && opt.GetDefElem().Defname == "language" {
+					if langNode := opt.GetDefElem().Arg; langNode != nil {
+						if strNode := langNode.GetString_(); strNode != nil {
+							return strings.ToLower(strNode.Sval)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
+// isDOBlock checks if the statement is a DO block using the AST node
+func isDOBlock(stmt *parser.Statement) bool {
+	if stmt.Node == nil {
+		return false
+	}
+
+	if _, ok := stmt.Node.Node.(*pgquery.Node_DoStmt); ok {
+		return true
+	}
+
+	return false
+}
+
 // instrumentPlpgsqlFunction instruments a PL/pgSQL function with line-by-line coverage
+// Uses pg_query.ParsePlPgSqlToJSON to properly parse the PL/pgSQL AST
 func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
+	// Trim leading empty lines from stmt.RawSQL to ensure PL/pgSQL parser line numbers match
+	lines := strings.Split(stmt.RawSQL, "\n")
+	firstNonEmptyIndex := 0
+	for i, line := range lines {
+		if len(strings.TrimSpace(line)) > 0 {
+			firstNonEmptyIndex = i
+			break
+		}
+	}
+
+	trimmedSQL := strings.Join(lines[firstNonEmptyIndex:], "\n")
+	lineOffset := firstNonEmptyIndex
+
+	// Parse the PL/pgSQL function using the proper parser
+	jsonResult, err := pgquery.ParsePlPgSqlToJSON(trimmedSQL)
+	if err != nil {
+		// Return empty instrumentation for malformed SQL
+		return stmt.RawSQL, nil
+	}
+
+	// Parse the JSON result to extract statement line numbers
+	var plpgsqlAST []map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonResult), &plpgsqlAST); err != nil {
+		// Return empty instrumentation for invalid AST
+		return stmt.RawSQL, nil
+	}
+
+	// Extract executable line numbers from the AST
+	executableLines := extractExecutableLines(plpgsqlAST)
+
+	// If no executable lines found, return without instrumentation
+	if len(executableLines) == 0 {
+		return stmt.RawSQL, nil
+	}
+
+	// Find the function body offset using the AST structure (using trimmed SQL)
+	trimmedStmt := &parser.Statement{
+		RawSQL:    trimmedSQL,
+		StartLine: stmt.StartLine + lineOffset,
+		EndLine:   stmt.EndLine,
+		Type:      stmt.Type,
+		Node:      stmt.Node,
+	}
+	bodyOffset := findFunctionBodyOffset(trimmedStmt)
+	if bodyOffset < 0 {
+		// Could not determine body offset, return without instrumentation
+		return stmt.RawSQL, nil
+	}
+
+	// Now instrument the function by injecting PERFORM pg_notify at each executable line
+	instrumentedTrimmed, locations := injectNotifyAtLines(trimmedStmt, filePath, executableLines)
+
+	// Reconstruct full SQL with leading lines
+	if lineOffset > 0 {
+		result := strings.Join(lines[:lineOffset], "\n") + "\n" + instrumentedTrimmed
+		return result, locations
+	}
+
+	return instrumentedTrimmed, locations
+}
+
+// extractExecutableLines walks the PL/pgSQL AST and extracts line numbers of executable statements
+func extractExecutableLines(ast []map[string]interface{}) []int {
+	var lines []int
+
+	for _, node := range ast {
+		lines = append(lines, walkPlpgsqlNode(node)...)
+	}
+
+	return lines
+}
+
+// walkPlpgsqlNode recursively walks a PL/pgSQL AST node and extracts executable line numbers
+func walkPlpgsqlNode(node map[string]interface{}) []int {
+	var lines []int
+
+	for key, value := range node {
+		switch key {
+		case "PLpgSQL_function":
+			// Walk the function action (body)
+			if funcMap, ok := value.(map[string]interface{}); ok {
+				if action, ok := funcMap["action"].(map[string]interface{}); ok {
+					lines = append(lines, walkPlpgsqlNode(action)...)
+				}
+			}
+
+		case "PLpgSQL_stmt_block":
+			// Walk block body
+			if blockMap, ok := value.(map[string]interface{}); ok {
+				if body, ok := blockMap["body"].([]interface{}); ok {
+					for _, stmt := range body {
+						if stmtMap, ok := stmt.(map[string]interface{}); ok {
+							lines = append(lines, walkPlpgsqlNode(stmtMap)...)
+						}
+					}
+				}
+			}
+
+		case "PLpgSQL_stmt_assign":
+			// Assignment statement - executable
+			if stmtMap, ok := value.(map[string]interface{}); ok {
+				if lineno, ok := stmtMap["lineno"].(float64); ok {
+					lines = append(lines, int(lineno))
+				}
+			}
+
+		case "PLpgSQL_stmt_return":
+			// Return statement - executable
+			if stmtMap, ok := value.(map[string]interface{}); ok {
+				if lineno, ok := stmtMap["lineno"].(float64); ok {
+					lines = append(lines, int(lineno))
+				}
+			}
+
+		case "PLpgSQL_stmt_if":
+			// IF statement - walk branches
+			if stmtMap, ok := value.(map[string]interface{}); ok {
+				// Walk then_body
+				if thenBody, ok := stmtMap["then_body"].([]interface{}); ok {
+					for _, stmt := range thenBody {
+						if s, ok := stmt.(map[string]interface{}); ok {
+							lines = append(lines, walkPlpgsqlNode(s)...)
+						}
+					}
+				}
+				// Walk elsif_list
+				if elsifList, ok := stmtMap["elsif_list"].([]interface{}); ok {
+					for _, elsif := range elsifList {
+						if elsifMap, ok := elsif.(map[string]interface{}); ok {
+							if elsifStmt, ok := elsifMap["PLpgSQL_if_elsif"].(map[string]interface{}); ok {
+								if stmts, ok := elsifStmt["stmts"].([]interface{}); ok {
+									for _, stmt := range stmts {
+										if s, ok := stmt.(map[string]interface{}); ok {
+											lines = append(lines, walkPlpgsqlNode(s)...)
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+				// Walk else_body
+				if elseBody, ok := stmtMap["else_body"].([]interface{}); ok {
+					for _, stmt := range elseBody {
+						if s, ok := stmt.(map[string]interface{}); ok {
+							lines = append(lines, walkPlpgsqlNode(s)...)
+						}
+					}
+				}
+			}
+
+		case "PLpgSQL_stmt_loop":
+			// Loop statement
+			if stmtMap, ok := value.(map[string]interface{}); ok {
+				if body, ok := stmtMap["body"].([]interface{}); ok {
+					for _, stmt := range body {
+						if s, ok := stmt.(map[string]interface{}); ok {
+							lines = append(lines, walkPlpgsqlNode(s)...)
+						}
+					}
+				}
+			}
+
+		case "PLpgSQL_stmt_while":
+			// While loop
+			if stmtMap, ok := value.(map[string]interface{}); ok {
+				if body, ok := stmtMap["body"].([]interface{}); ok {
+					for _, stmt := range body {
+						if s, ok := stmt.(map[string]interface{}); ok {
+							lines = append(lines, walkPlpgsqlNode(s)...)
+						}
+					}
+				}
+			}
+
+		case "PLpgSQL_stmt_fori", "PLpgSQL_stmt_fors", "PLpgSQL_stmt_forc", "PLpgSQL_stmt_dynfors":
+			// FOR loops
+			if stmtMap, ok := value.(map[string]interface{}); ok {
+				if body, ok := stmtMap["body"].([]interface{}); ok {
+					for _, stmt := range body {
+						if s, ok := stmt.(map[string]interface{}); ok {
+							lines = append(lines, walkPlpgsqlNode(s)...)
+						}
+					}
+				}
+			}
+
+		case "PLpgSQL_stmt_exit":
+			// EXIT statement
+			if stmtMap, ok := value.(map[string]interface{}); ok {
+				if lineno, ok := stmtMap["lineno"].(float64); ok {
+					lines = append(lines, int(lineno))
+				}
+			}
+
+		case "PLpgSQL_stmt_raise":
+			// RAISE statement
+			if stmtMap, ok := value.(map[string]interface{}); ok {
+				if lineno, ok := stmtMap["lineno"].(float64); ok {
+					lines = append(lines, int(lineno))
+				}
+			}
+
+		case "PLpgSQL_stmt_execsql":
+			// Execute SQL statement
+			if stmtMap, ok := value.(map[string]interface{}); ok {
+				if lineno, ok := stmtMap["lineno"].(float64); ok {
+					lines = append(lines, int(lineno))
+				}
+			}
+
+		case "PLpgSQL_stmt_perform":
+			// PERFORM statement
+			if stmtMap, ok := value.(map[string]interface{}); ok {
+				if lineno, ok := stmtMap["lineno"].(float64); ok {
+					lines = append(lines, int(lineno))
+				}
+			}
+		}
+	}
+
+	return lines
+}
+
+// findFunctionBodyOffset determines the line offset where the function body starts
+// by using AST location information from CreateFunctionStmt
+// Returns the 0-based line index within stmt.RawSQL where the function body begins
+func findFunctionBodyOffset(stmt *parser.Statement) int {
+	if stmt.Node == nil {
+		return -1
+	}
+
+	// Extract location from CreateFunctionStmt
+	if createFunc, ok := stmt.Node.Node.(*pgquery.Node_CreateFunctionStmt); ok {
+		if createFunc.CreateFunctionStmt != nil {
+			// Find the "as" option which contains the function body location
+			for _, opt := range createFunc.CreateFunctionStmt.Options {
+				if defElem := opt.GetDefElem(); defElem != nil && defElem.Defname == "as" {
+					// The defElem.Location points to the start of "AS" keyword
+					// The body starts after AS and the delimiter ($$, $function$, etc.)
+					if defElem.Location > 0 {
+						// Convert byte offset to line number (relative to statement start)
+						lineOffset := calculateLineFromByteOffset(stmt.RawSQL, int(defElem.Location))
+						// The body typically starts on the next line after AS $$
+						// But we need to be more precise - the body starts after the newline following the delimiter
+						return lineOffset + 1
+					}
+				}
+			}
+		}
+	}
+
+	return -1
+}
+
+// calculateLineFromByteOffset converts a byte offset to a 0-based line index
+func calculateLineFromByteOffset(sql string, byteOffset int) int {
+	lineIdx := 0
+	for i := 0; i < byteOffset && i < len(sql); i++ {
+		if sql[i] == '\n' {
+			lineIdx++
+		}
+	}
+	return lineIdx
+}
+
+// injectNotifyAtLines injects PERFORM pg_notify calls at specified line numbers
+func injectNotifyAtLines(stmt *parser.Statement, filePath string, executableLines []int) (string, []CoveragePoint) {
 	var locations []CoveragePoint
 
-	// Split the function into lines
+	// Split into lines
 	lines := strings.Split(stmt.RawSQL, "\n")
 	result := strings.Builder{}
 
+	// The line numbers from ParsePlPgSqlToJSON map directly to 0-based indices in stmt.RawSQL
+	// (i.e., PL/pgSQL line N → index N in lines array)
+	// To get file line numbers: PL/pgSQL line N → stmt.RawSQL index N → file line (stmt.StartLine + N)
+
+	absoluteLines := make(map[int]bool)
+	for _, plpgsqlLine := range executableLines {
+		// plpgsqlLine maps to index plpgsqlLine in the lines array (0-based)
+		lineIndex := plpgsqlLine
+		if lineIndex >= 0 && lineIndex < len(lines) {
+			// Convert to absolute file line number (1-based)
+			absoluteLine := stmt.StartLine + lineIndex
+			absoluteLines[absoluteLine] = true
+		}
+	}
+
 	currentLine := stmt.StartLine
-	inFunctionBody := false
-	inMultiLineStatement := false
-
 	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		trimmedUpper := strings.ToUpper(trimmed)
-
-		// Check if we're entering the function body
-		if !inFunctionBody && trimmedUpper == "BEGIN" {
-			inFunctionBody = true
-			result.WriteString(line)
-			result.WriteString("\n")
-			currentLine++
-			continue
-		}
-
-		// Check if we're exiting the function body (END followed by semicolon, not END IF/LOOP/CASE)
-		if inFunctionBody &&
-			(trimmedUpper == "END;" || trimmedUpper == "END$$;" || trimmedUpper == "END") &&
-			!strings.HasPrefix(trimmedUpper, "END IF") &&
-			!strings.HasPrefix(trimmedUpper, "END LOOP") &&
-			!strings.HasPrefix(trimmedUpper, "END CASE") {
-			result.WriteString(line)
-			result.WriteString("\n")
-			inFunctionBody = false
-			currentLine++
-			continue
-		}
-
-		// Inside function body: instrument executable lines
-		if inFunctionBody && trimmed != "" && !strings.HasPrefix(trimmed, "--") {
-			// Skip control flow keywords that aren't executable statements
-			isControlFlow := isControlFlowKeyword(trimmedUpper)
-
-			if !isControlFlow {
-				// Only instrument the start of a new statement (not continuation lines)
-				if !inMultiLineStatement {
-					// Create coverage point for this line
-					cp := CoveragePoint{
-						File:             filePath,
-						Line:             currentLine,
-						Branch:           "",
-						ImplicitCoverage: false, // Explicit coverage via NOTIFY
-					}
-					cp.SignalID = FormatSignalID(cp.File, cp.Line, cp.Branch)
-					locations = append(locations, cp)
-
-					// Inject NOTIFY before the line
-					indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-					notifyCall := fmt.Sprintf("%sPERFORM pg_notify('pgcov', '%s');\n",
-						indent, strings.ReplaceAll(cp.SignalID, "'", "''"))
-					result.WriteString(notifyCall)
-				}
+		// Check if this line should be instrumented
+		if absoluteLines[currentLine] {
+			// Create coverage point
+			cp := CoveragePoint{
+				File:             filePath,
+				Line:             currentLine,
+				Branch:           "",
+				ImplicitCoverage: false,
 			}
+			cp.SignalID = FormatSignalID(cp.File, cp.Line, cp.Branch)
+			locations = append(locations, cp)
 
-			// Track if we're in a multi-line statement
-			// Control flow keywords don't count as multi-line statement starters
-			if !isControlFlow {
-				if strings.HasSuffix(trimmed, ";") {
-					inMultiLineStatement = false
-				} else {
-					inMultiLineStatement = true
-				}
-			}
+			// Inject NOTIFY before the line
+			indent := getIndentation(line)
+			notifyCall := fmt.Sprintf("%sPERFORM pg_notify('pgcov', '%s');\n",
+				indent, strings.ReplaceAll(cp.SignalID, "'", "''"))
+			result.WriteString(notifyCall)
 		}
 
 		// Write original line
@@ -180,41 +463,9 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 	return result.String(), locations
 }
 
-// isControlFlowKeyword checks if a line is a control flow keyword that shouldn't be instrumented
-func isControlFlowKeyword(upperTrimmed string) bool {
-	// Skip lines that are ONLY control flow keywords (no executable code)
-	// For IF/ELSIF with conditions, we still skip them
-	// For ELSE without code, we skip it
-	// But assignments like "discount_rate := 0.20;" should NOT be skipped
-
-	// Keywords that are complete statements by themselves
-	keywordsExact := []string{
-		"ELSE", "ELSIF", "END IF", "END IF;", "LOOP", "END LOOP", "END LOOP;",
-		"END CASE", "END CASE;", "DECLARE", "BEGIN",
-	}
-	for _, kw := range keywordsExact {
-		if upperTrimmed == kw {
-			return true
-		}
-	}
-
-	// Keywords that start a line but may have conditions
-	keywordsPrefix := []string{
-		"IF ", "ELSIF ", "WHEN ", "FOR ", "WHILE ", "CASE ",
-	}
-	for _, kw := range keywordsPrefix {
-		if strings.HasPrefix(upperTrimmed, kw) {
-			return true
-		}
-	}
-
-	// Also skip transaction control statements (these are complete statements)
-	if upperTrimmed == "COMMIT;" || upperTrimmed == "ROLLBACK;" ||
-		upperTrimmed == "COMMIT" || upperTrimmed == "ROLLBACK" {
-		return true
-	}
-
-	return false
+// getIndentation returns the leading whitespace of a line
+func getIndentation(line string) string {
+	return line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 }
 
 // instrumentSQLFunction instruments a SQL function
@@ -233,26 +484,21 @@ func instrumentSQLFunction(stmt *parser.Statement, filePath string) (string, []C
 }
 
 // markStatementLinesAsCovered creates coverage points for all non-comment lines
+// Uses AST node location to determine the statement boundaries rather than string operations
 func markStatementLinesAsCovered(stmt *parser.Statement, filePath string) []CoveragePoint {
 	var locations []CoveragePoint
 
-	lines := strings.Split(stmt.RawSQL, "\n")
-	currentLine := stmt.StartLine
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		// Skip empty lines and comments
-		if trimmed != "" && !strings.HasPrefix(trimmed, "--") {
-			cp := CoveragePoint{
-				File:             filePath,
-				Line:             currentLine,
-				Branch:           "",
-				ImplicitCoverage: true, // DDL/DML are implicitly covered on successful execution
-			}
-			cp.SignalID = FormatSignalID(cp.File, cp.Line, cp.Branch)
-			locations = append(locations, cp)
+	// For DDL/DML statements, mark the primary line(s) as implicitly covered
+	// We use the statement's line range from the AST
+	for line := stmt.StartLine; line <= stmt.EndLine; line++ {
+		cp := CoveragePoint{
+			File:             filePath,
+			Line:             line,
+			Branch:           "",
+			ImplicitCoverage: true, // DDL/DML are implicitly covered on successful execution
 		}
-		currentLine++
+		cp.SignalID = FormatSignalID(cp.File, cp.Line, cp.Branch)
+		locations = append(locations, cp)
 	}
 
 	return locations
