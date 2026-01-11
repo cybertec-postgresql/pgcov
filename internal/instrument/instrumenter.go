@@ -142,13 +142,22 @@ func isDOBlock(stmt *parser.Statement) bool {
 // instrumentPlpgsqlFunction instruments a PL/pgSQL function with line-by-line coverage
 // Uses pg_query.ParsePlPgSqlToJSON to properly parse the PL/pgSQL AST
 func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
-	// Trim leading empty lines from stmt.RawSQL to ensure PL/pgSQL parser line numbers match
 	lines := strings.Split(stmt.RawSQL, "\n")
+	
+	// Trim leading comments and empty lines from stmt.RawSQL to ensure PL/pgSQL parser line numbers match
+	// We need to find the line that starts with CREATE FUNCTION/PROCEDURE or DO
 	firstNonEmptyIndex := 0
 	for i, line := range lines {
-		if len(strings.TrimSpace(line)) > 0 {
+		trimmed := strings.TrimSpace(line)
+		// Look for CREATE FUNCTION, CREATE PROCEDURE, or DO
+		if strings.HasPrefix(strings.ToUpper(trimmed), "CREATE") || 
+		   strings.HasPrefix(strings.ToUpper(trimmed), "DO") {
 			firstNonEmptyIndex = i
 			break
+		}
+		// If not found yet, at least skip empty lines
+		if trimmed != "" && firstNonEmptyIndex == 0 {
+			firstNonEmptyIndex = i
 		}
 	}
 
@@ -416,13 +425,12 @@ func injectNotifyAtLines(stmt *parser.Statement, filePath string, executableLine
 	lines := strings.Split(stmt.RawSQL, "\n")
 	result := strings.Builder{}
 
-	// The line numbers from ParsePlPgSqlToJSON map directly to 0-based indices in stmt.RawSQL
-	// (i.e., PL/pgSQL line N → index N in lines array)
-	// To get file line numbers: PL/pgSQL line N → stmt.RawSQL index N → file line (stmt.StartLine + N)
+	// The line numbers from ParsePlPgSqlToJSON are 0-based indices relative to the trimmed SQL string
+	// To get file line numbers: PL/pgSQL line N (0-based) → stmt.RawSQL index N → file line (stmt.StartLine + N)
 
 	absoluteLines := make(map[int]bool)
 	for _, plpgsqlLine := range executableLines {
-		// plpgsqlLine maps to index plpgsqlLine in the lines array (0-based)
+		// plpgsqlLine is a 0-based index from PL/pgSQL parser
 		lineIndex := plpgsqlLine
 		if lineIndex >= 0 && lineIndex < len(lines) {
 			// Convert to absolute file line number (1-based)
