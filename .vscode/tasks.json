@@ -56,23 +56,20 @@
                 "panel": "new"
             }
         },
-        {
-            "label": "Run pgcov",
-            "type": "shell",
-            "command": "${workspaceFolder}/pgcov${command:pickString,values,.exe,}",
-            "args": [
-                "run",
-                "./testdata/simple",
-                "--verbose"
-            ],
-            "group": "none",
-            "presentation": {
-                "reveal": "always",
-                "panel": "shared"
-            },
-            "dependsOn": ["Build pgcov"],
-            "problemMatcher": []
-        },
+                {
+                    "label": "Lint",
+                    "type": "shell",
+                    "command": "golangci-lint run",
+                    "problemMatcher": [
+                        "$go"
+                    ],
+                    "group": "test",
+                    "presentation": {
+                        "reveal": "always",
+                        "panel": "new"
+                    }
+                },
+
         {
             "label": "Clean Build Cache",
             "type": "shell",
@@ -88,51 +85,6 @@
                 "panel": "shared"
             },
             "problemMatcher": []
-        },
-        {
-            "label": "Go Mod Tidy",
-            "type": "shell",
-            "command": "go",
-            "args": [
-                "mod",
-                "tidy"
-            ],
-            "group": "none",
-            "presentation": {
-                "reveal": "always",
-                "panel": "shared"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "Format Code",
-            "type": "shell",
-            "command": "go",
-            "args": [
-                "fmt",
-                "./..."
-            ],
-            "group": "none",
-            "presentation": {
-                "reveal": "always",
-                "panel": "shared"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "Go Vet",
-            "type": "shell",
-            "command": "go",
-            "args": [
-                "vet",
-                "./..."
-            ],
-            "group": "none",
-            "presentation": {
-                "reveal": "always",
-                "panel": "shared"
-            },
-            "problemMatcher": ["$go"]
         }
     ]
 }
