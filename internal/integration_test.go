@@ -175,7 +175,7 @@ func TestEndToEndWithTestcontainers(t *testing.T) {
 			t.Fatal("Coverage data is nil")
 		}
 
-		totalPercent := cov.TotalLineCoveragePercent()
+		totalPercent := cov.TotalPositionCoveragePercent()
 		t.Logf("Total coverage: %.2f%%", totalPercent)
 
 		// Verify coverage is >= 0% (instrumentation is TODO for Phase 4)
@@ -184,11 +184,13 @@ func TestEndToEndWithTestcontainers(t *testing.T) {
 		}
 
 		// Log coverage details
-		if len(cov.Files) > 0 {
-			for file, hits := range cov.Files {
-				percent := cov.LineCoveragePercent(file)
-				covered := countCoveredLines(hits)
-				t.Logf("  %s: %.2f%% (%d/%d lines)",
+		if len(cov.Positions) > 0 {
+			files := cov.GetFiles()
+			for _, file := range files {
+				percent := cov.PositionCoveragePercent(file)
+				hits := cov.Positions[file]
+				covered := countCoveredPositions(hits)
+				t.Logf("  %s: %.2f%% (%d/%d positions)",
 					file, percent, covered, len(hits))
 			}
 		} else {
@@ -439,31 +441,31 @@ func TestOrderIndependence(t *testing.T) {
 	t.Log("Comparing coverage results...")
 
 	// Check that both have the same files
-	if len(coverageAB.Files) != len(coverageBA.Files) {
+	if len(coverageAB.Positions) != len(coverageBA.Positions) {
 		t.Errorf("Different number of files covered: A→B has %d, B→A has %d",
-			len(coverageAB.Files), len(coverageBA.Files))
+			len(coverageAB.Positions), len(coverageBA.Positions))
 	}
 
 	// Compare each file's coverage
-	for filePath, fileAB := range coverageAB.Files {
-		fileBA, exists := coverageBA.Files[filePath]
+	for filePath, fileAB := range coverageAB.Positions {
+		fileBA, exists := coverageBA.Positions[filePath]
 		if !exists {
 			t.Errorf("File %s covered in A→B but not in B→A", filePath)
 			continue
 		}
 
-		// Compare line coverage
+		// Compare position coverage
 		if len(fileAB) != len(fileBA) {
-			t.Errorf("File %s: different number of lines covered: A→B has %d, B→A has %d",
+			t.Errorf("File %s: different number of positions covered: A→B has %d, B→A has %d",
 				filePath, len(fileAB), len(fileBA))
 		}
 
-		// Check each line
-		for lineNum, hitCountAB := range fileAB {
-			hitCountBA, exists := fileBA[lineNum]
+		// Check each position
+		for posKey, hitCountAB := range fileAB {
+			hitCountBA, exists := fileBA[posKey]
 			if !exists {
-				t.Errorf("File %s, line %d: covered in A→B but not in B→A",
-					filePath, lineNum)
+				t.Errorf("File %s, position %s: covered in A→B but not in B→A",
+					filePath, posKey)
 				continue
 			}
 
@@ -471,29 +473,29 @@ func TestOrderIndependence(t *testing.T) {
 			coveredAB := hitCountAB > 0
 			coveredBA := hitCountBA > 0
 			if coveredAB != coveredBA {
-				t.Errorf("File %s, line %d: coverage mismatch - A→B=%v, B→A=%v",
-					filePath, lineNum, coveredAB, coveredBA)
+				t.Errorf("File %s, position %s: coverage mismatch - A→B=%v, B→A=%v",
+					filePath, posKey, coveredAB, coveredBA)
 			}
 
 			// Note: We don't compare HitCount exactly, as it may vary if tests
-			// execute the same line multiple times. We only care that Covered
+			// execute the same position multiple times. We only care that Covered
 			// status is the same.
 		}
 
 		// Branch coverage not yet implemented
-		t.Logf("  %s: %d lines verified", filePath, len(fileAB))
+		t.Logf("  %s: %d positions verified", filePath, len(fileAB))
 	}
 
 	// Check for files in BA but not in AB
-	for filePath := range coverageBA.Files {
-		if _, exists := coverageAB.Files[filePath]; !exists {
+	for filePath := range coverageBA.Positions {
+		if _, exists := coverageAB.Positions[filePath]; !exists {
 			t.Errorf("File %s covered in B→A but not in A→B", filePath)
 		}
 	}
 
 	// Compare total coverage percentages
-	totalAB := coverageAB.TotalLineCoveragePercent()
-	totalBA := coverageBA.TotalLineCoveragePercent()
+	totalAB := coverageAB.TotalPositionCoveragePercent()
+	totalBA := coverageBA.TotalPositionCoveragePercent()
 	t.Logf("Total coverage A→B: %.2f%%", totalAB)
 	t.Logf("Total coverage B→A: %.2f%%", totalBA)
 
@@ -640,32 +642,32 @@ func TestTestIndependence(t *testing.T) {
 	t.Log("Comparing coverage results...")
 
 	// Check that both have the same files
-	if len(coverage1.Files) != len(coverage2.Files) {
+	if len(coverage1.Positions) != len(coverage2.Positions) {
 		t.Errorf("Different number of files covered: run1 has %d, run2 has %d",
-			len(coverage1.Files), len(coverage2.Files))
+			len(coverage1.Positions), len(coverage2.Positions))
 	}
 
 	// Compare each file's coverage in detail
-	for filePath, file1 := range coverage1.Files {
-		file2, exists := coverage2.Files[filePath]
+	for filePath, file1 := range coverage1.Positions {
+		file2, exists := coverage2.Positions[filePath]
 		if !exists {
 			t.Errorf("File %s covered in run1 but not in run2", filePath)
 			continue
 		}
 
-		// Compare number of lines
+		// Compare number of positions
 		if len(file1) != len(file2) {
-			t.Errorf("File %s: different number of lines covered: run1 has %d, run2 has %d",
+			t.Errorf("File %s: different number of positions covered: run1 has %d, run2 has %d",
 				filePath, len(file1), len(file2))
 		}
 
-		// Compare line-by-line coverage
+		// Compare position-by-position coverage
 		mismatchCount := 0
-		for lineNum, hitCount1 := range file1 {
-			hitCount2, exists := file2[lineNum]
+		for posKey, hitCount1 := range file1 {
+			hitCount2, exists := file2[posKey]
 			if !exists {
-				t.Errorf("File %s, line %d: covered in run1 but not in run2",
-					filePath, lineNum)
+				t.Errorf("File %s, position %s: covered in run1 but not in run2",
+					filePath, posKey)
 				mismatchCount++
 				continue
 			}
@@ -674,8 +676,8 @@ func TestTestIndependence(t *testing.T) {
 			covered1 := hitCount1 > 0
 			covered2 := hitCount2 > 0
 			if covered1 != covered2 {
-				t.Errorf("File %s, line %d: coverage mismatch - run1=%v, run2=%v",
-					filePath, lineNum, covered1, covered2)
+				t.Errorf("File %s, position %s: coverage mismatch - run1=%v, run2=%v",
+					filePath, posKey, covered1, covered2)
 				mismatchCount++
 			}
 		}
@@ -689,15 +691,15 @@ func TestTestIndependence(t *testing.T) {
 	}
 
 	// Check for files in run2 but not in run1
-	for filePath := range coverage2.Files {
-		if _, exists := coverage1.Files[filePath]; !exists {
+	for filePath := range coverage2.Positions {
+		if _, exists := coverage1.Positions[filePath]; !exists {
 			t.Errorf("File %s covered in run2 but not in run1", filePath)
 		}
 	}
 
 	// Compare total coverage percentages
-	total1 := coverage1.TotalLineCoveragePercent()
-	total2 := coverage2.TotalLineCoveragePercent()
+	total1 := coverage1.TotalPositionCoveragePercent()
+	total2 := coverage2.TotalPositionCoveragePercent()
 	t.Logf("Total coverage run1: %.2f%%", total1)
 	t.Logf("Total coverage run2: %.2f%%", total2)
 
@@ -755,8 +757,8 @@ func databaseExists(ctx context.Context, pool *database.Pool, dbName string) (bo
 	return exists, err
 }
 
-// Helper function to count covered lines
-func countCoveredLines(hits coverage.FileHits) int {
+// Helper function to count covered positions
+func countCoveredPositions(hits coverage.PositionHits) int {
 	count := 0
 	for _, hitCount := range hits {
 		if hitCount > 0 {

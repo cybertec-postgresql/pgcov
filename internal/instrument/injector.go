@@ -2,40 +2,43 @@ package instrument
 
 import (
 	"fmt"
-	"strconv"
 )
 
 // FormatSignalID generates a signal ID for a coverage point
-// Format: {file}:{line} or {file}:{line}:{branch}
-func FormatSignalID(file string, line int, branch string) string {
+// Format: {file}:{startPos}:{length} or {file}:{startPos}:{length}:{branch}
+func FormatSignalID(file string, startPos int, length int, branch string) string {
 	if branch == "" {
-		return fmt.Sprintf("%s:%d", file, line)
+		return fmt.Sprintf("%s:%d:%d", file, startPos, length)
 	}
-	return fmt.Sprintf("%s:%d:%s", file, line, branch)
+	return fmt.Sprintf("%s:%d:%d:%s", file, startPos, length, branch)
 }
 
 // FormatSignalIDFromPoint generates a signal ID from a CoveragePoint
 func FormatSignalIDFromPoint(cp CoveragePoint) string {
-	return FormatSignalID(cp.File, cp.Line, cp.Branch)
+	return FormatSignalID(cp.File, cp.StartPos, cp.Length, cp.Branch)
 }
 
 // ValidateSignalID checks if a signal ID is properly formatted
 func ValidateSignalID(signalID string) error {
-	_, line, _, err := ParseSignalID(signalID)
+	_, startPos, length, _, err := ParseSignalID(signalID)
 	if err != nil {
 		return fmt.Errorf("invalid signal ID: %w", err)
 	}
 
-	if line < 1 {
-		return fmt.Errorf("signal ID has invalid line number: %d", line)
+	if startPos < 0 {
+		return fmt.Errorf("signal ID has invalid start position: %d", startPos)
+	}
+
+	if length < 0 {
+		return fmt.Errorf("signal ID has invalid length: %d", length)
 	}
 
 	return nil
 }
 
 // GenerateUniqueSignalID creates a unique signal ID with optional suffix
-func GenerateUniqueSignalID(file string, line int, branch string, suffix string) string {
-	baseID := FormatSignalID(file, line, branch)
+func GenerateUniqueSignalID(file string, startPos int, length int, branch string, suffix string) string {
+	baseID := FormatSignalID(file, startPos, length, branch)
 	if suffix != "" {
 		return baseID + "_" + suffix
 	}
@@ -47,15 +50,15 @@ func CompareSignalIDs(id1, id2 string) bool {
 	return id1 == id2
 }
 
-// ExtractLineFromSignalID extracts just the line number from a signal ID
-func ExtractLineFromSignalID(signalID string) (int, error) {
-	_, line, _, err := ParseSignalID(signalID)
-	return line, err
+// ExtractPositionFromSignalID extracts the start position from a signal ID
+func ExtractPositionFromSignalID(signalID string) (int, error) {
+	_, startPos, _, _, err := ParseSignalID(signalID)
+	return startPos, err
 }
 
 // ExtractFileFromSignalID extracts just the file path from a signal ID
 func ExtractFileFromSignalID(signalID string) (string, error) {
-	file, _, _, err := ParseSignalID(signalID)
+	file, _, _, _, err := ParseSignalID(signalID)
 	return file, err
 }
 
@@ -63,14 +66,4 @@ func ExtractFileFromSignalID(signalID string) (string, error) {
 func SignalIDToKey(signalID string) string {
 	// Signal ID is already unique, so it can be used directly as a key
 	return signalID
-}
-
-// LineToString converts an integer line number to string
-func LineToString(line int) string {
-	return strconv.Itoa(line)
-}
-
-// StringToLine converts a string line number to integer
-func StringToLine(s string) (int, error) {
-	return strconv.Atoi(s)
 }

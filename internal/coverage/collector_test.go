@@ -23,7 +23,7 @@ func TestCollector_AddSignal(t *testing.T) {
 	c := NewCollector()
 
 	signal := runner.CoverageSignal{
-		SignalID:  "test.sql:10",
+		SignalID:  "test.sql:100:50",
 		Timestamp: time.Now(),
 	}
 
@@ -33,9 +33,9 @@ func TestCollector_AddSignal(t *testing.T) {
 	}
 
 	// Verify signal was recorded
-	hits := c.GetFileCoverage("test.sql")
-	if hits[10] != 1 {
-		t.Errorf("AddSignal() line 10 hit count = %d, want 1", hits[10])
+	posHits := c.coverage.Positions["test.sql"]
+	if posHits["100:50"] != 1 {
+		t.Errorf("AddSignal() line 10 hit count = %d, want 1", posHits["100:50"])
 	}
 }
 
@@ -44,7 +44,7 @@ func TestCollector_AddSignal_Multiple(t *testing.T) {
 
 	// Add same signal multiple times
 	signal := runner.CoverageSignal{
-		SignalID:  "test.sql:10",
+		SignalID:  "test.sql:100:50",
 		Timestamp: time.Now(),
 	}
 
@@ -56,9 +56,9 @@ func TestCollector_AddSignal_Multiple(t *testing.T) {
 	}
 
 	// Verify hit count is accumulated
-	hits := c.GetFileCoverage("test.sql")
-	if hits[10] != 5 {
-		t.Errorf("AddSignal() line 10 hit count = %d, want 5", hits[10])
+	posHits := c.coverage.Positions["test.sql"]
+	if posHits["100:50"] != 5 {
+		t.Errorf("AddSignal() line 10 hit count = %d, want 5", posHits["100:50"])
 	}
 }
 
@@ -82,9 +82,9 @@ func TestCollector_CollectFromRun(t *testing.T) {
 	now := time.Now()
 	testRun := &runner.TestRun{
 		CoverageSigs: []runner.CoverageSignal{
-			{SignalID: "test.sql:10", Timestamp: now},
-			{SignalID: "test.sql:20", Timestamp: now.Add(time.Second)},
-			{SignalID: "test.sql:30", Timestamp: now.Add(2 * time.Second)},
+			{SignalID: "test.sql:100:50", Timestamp: now},
+			{SignalID: "test.sql:200:60", Timestamp: now.Add(time.Second)},
+			{SignalID: "test.sql:300:70", Timestamp: now.Add(2 * time.Second)},
 		},
 	}
 
@@ -94,15 +94,15 @@ func TestCollector_CollectFromRun(t *testing.T) {
 	}
 
 	// Verify all signals were recorded
-	hits := c.GetFileCoverage("test.sql")
-	if hits[10] != 1 {
-		t.Errorf("CollectFromRun() line 10 hit count = %d, want 1", hits[10])
+	posHits := c.coverage.Positions["test.sql"]
+	if posHits["100:50"] != 1 {
+		t.Errorf("CollectFromRun() line 10 hit count = %d, want 1", posHits["100:50"])
 	}
-	if hits[20] != 1 {
-		t.Errorf("CollectFromRun() line 20 hit count = %d, want 1", hits[20])
+	if posHits["200:60"] != 1 {
+		t.Errorf("CollectFromRun() line 20 hit count = %d, want 1", posHits["200:60"])
 	}
-	if hits[30] != 1 {
-		t.Errorf("CollectFromRun() line 30 hit count = %d, want 1", hits[30])
+	if posHits["300:70"] != 1 {
+		t.Errorf("CollectFromRun() line 30 hit count = %d, want 1", posHits["300:70"])
 	}
 }
 
@@ -113,13 +113,13 @@ func TestCollector_CollectFromRuns(t *testing.T) {
 	testRuns := []*runner.TestRun{
 		{
 			CoverageSigs: []runner.CoverageSignal{
-				{SignalID: "test.sql:10", Timestamp: now},
+				{SignalID: "test.sql:100:50", Timestamp: now},
 			},
 		},
 		{
 			CoverageSigs: []runner.CoverageSignal{
-				{SignalID: "test.sql:10", Timestamp: now.Add(time.Second)},
-				{SignalID: "test.sql:20", Timestamp: now.Add(2 * time.Second)},
+				{SignalID: "test.sql:100:50", Timestamp: now.Add(time.Second)},
+				{SignalID: "test.sql:200:60", Timestamp: now.Add(2 * time.Second)},
 			},
 		},
 	}
@@ -130,12 +130,12 @@ func TestCollector_CollectFromRuns(t *testing.T) {
 	}
 
 	// Verify hit counts are aggregated
-	hits := c.GetFileCoverage("test.sql")
-	if hits[10] != 2 {
-		t.Errorf("CollectFromRuns() line 10 hit count = %d, want 2", hits[10])
+	posHits := c.coverage.Positions["test.sql"]
+	if posHits["100:50"] != 2 {
+		t.Errorf("CollectFromRuns() line 10 hit count = %d, want 2", posHits["100:50"])
 	}
-	if hits[20] != 1 {
-		t.Errorf("CollectFromRuns() line 20 hit count = %d, want 1", hits[20])
+	if posHits["200:60"] != 1 {
+		t.Errorf("CollectFromRuns() line 20 hit count = %d, want 1", posHits["200:60"])
 	}
 }
 
@@ -153,7 +153,7 @@ func TestCollector_ThreadSafe(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < signalsPerGoroutine; j++ {
 				signal := runner.CoverageSignal{
-					SignalID:  "test.sql:10",
+					SignalID:  "test.sql:100:50",
 					Timestamp: time.Now(),
 				}
 				_ = c.AddSignal(signal)
@@ -165,9 +165,9 @@ func TestCollector_ThreadSafe(t *testing.T) {
 
 	// Verify hit count is correct (should be numGoroutines * signalsPerGoroutine)
 	expectedHits := numGoroutines * signalsPerGoroutine
-	hits := c.GetFileCoverage("test.sql")
-	if hits[10] != expectedHits {
-		t.Errorf("Thread-safe AddSignal() line 10 hit count = %d, want %d", hits[10], expectedHits)
+	posHits := c.coverage.Positions["test.sql"]
+	if posHits["100:50"] != expectedHits {
+		t.Errorf("Thread-safe AddSignal() line 10 hit count = %d, want %d", posHits["100:50"], expectedHits)
 	}
 }
 
@@ -176,7 +176,7 @@ func TestCollector_Reset(t *testing.T) {
 
 	// Add some signals
 	signal := runner.CoverageSignal{
-		SignalID:  "test.sql:10",
+		SignalID:  "test.sql:100:50",
 		Timestamp: time.Now(),
 	}
 	_ = c.AddSignal(signal)
@@ -185,9 +185,9 @@ func TestCollector_Reset(t *testing.T) {
 	c.Reset()
 
 	// Verify coverage is cleared
-	hits := c.GetFileCoverage("test.sql")
-	if len(hits) != 0 {
-		t.Errorf("Reset() coverage not cleared, got %d lines", len(hits))
+	posHits := c.coverage.Positions["test.sql"]
+	if len(posHits) != 0 {
+		t.Errorf("Reset() coverage not cleared, got %d lines", len(posHits))
 	}
 }
 
@@ -197,12 +197,12 @@ func TestCollector_Merge(t *testing.T) {
 
 	now := time.Now()
 	// Add signals to first collector
-	_ = c1.AddSignal(runner.CoverageSignal{SignalID: "test.sql:10", Timestamp: now})
-	_ = c1.AddSignal(runner.CoverageSignal{SignalID: "test.sql:20", Timestamp: now.Add(time.Second)})
+	_ = c1.AddSignal(runner.CoverageSignal{SignalID: "test.sql:100:50", Timestamp: now})
+	_ = c1.AddSignal(runner.CoverageSignal{SignalID: "test.sql:200:60", Timestamp: now.Add(time.Second)})
 
 	// Add signals to second collector
-	_ = c2.AddSignal(runner.CoverageSignal{SignalID: "test.sql:10", Timestamp: now.Add(2 * time.Second)})
-	_ = c2.AddSignal(runner.CoverageSignal{SignalID: "test.sql:30", Timestamp: now.Add(3 * time.Second)})
+	_ = c2.AddSignal(runner.CoverageSignal{SignalID: "test.sql:100:50", Timestamp: now.Add(2 * time.Second)})
+	_ = c2.AddSignal(runner.CoverageSignal{SignalID: "test.sql:300:70", Timestamp: now.Add(3 * time.Second)})
 
 	// Merge c2 into c1
 	err := c1.Merge(c2)
@@ -211,15 +211,15 @@ func TestCollector_Merge(t *testing.T) {
 	}
 
 	// Verify merged results
-	hits := c1.GetFileCoverage("test.sql")
-	if hits[10] != 2 {
-		t.Errorf("Merge() line 10 hit count = %d, want 2", hits[10])
+	posHits := c1.GetFilePositionCoverage("test.sql")
+	if posHits["100:50"] != 2 {
+		t.Errorf("Merge() line 10 hit count = %d, want 2", posHits["100:50"])
 	}
-	if hits[20] != 1 {
-		t.Errorf("Merge() line 20 hit count = %d, want 1", hits[20])
+	if posHits["200:60"] != 1 {
+		t.Errorf("Merge() line 20 hit count = %d, want 1", posHits["200:60"])
 	}
-	if hits[30] != 1 {
-		t.Errorf("Merge() line 30 hit count = %d, want 1", hits[30])
+	if posHits["300:70"] != 1 {
+		t.Errorf("Merge() line 30 hit count = %d, want 1", posHits["300:70"])
 	}
 }
 
@@ -228,9 +228,9 @@ func TestCollector_GetFileList(t *testing.T) {
 
 	now := time.Now()
 	// Add signals for multiple files
-	_ = c.AddSignal(runner.CoverageSignal{SignalID: "file1.sql:10", Timestamp: now})
-	_ = c.AddSignal(runner.CoverageSignal{SignalID: "file2.sql:10", Timestamp: now.Add(time.Second)})
-	_ = c.AddSignal(runner.CoverageSignal{SignalID: "file3.sql:10", Timestamp: now.Add(2 * time.Second)})
+	_ = c.AddSignal(runner.CoverageSignal{SignalID: "file1.sql:100:50", Timestamp: now})
+	_ = c.AddSignal(runner.CoverageSignal{SignalID: "file2.sql:150:55", Timestamp: now.Add(time.Second)})
+	_ = c.AddSignal(runner.CoverageSignal{SignalID: "file3.sql:50:45", Timestamp: now.Add(2 * time.Second)})
 
 	files := c.GetFileList()
 	if len(files) != 3 {
@@ -258,16 +258,16 @@ func TestCollector_Coverage(t *testing.T) {
 	c := NewCollector()
 
 	// Add some signals
-	_ = c.AddSignal(runner.CoverageSignal{SignalID: "test.sql:10", Timestamp: time.Now()})
+	_ = c.AddSignal(runner.CoverageSignal{SignalID: "test.sql:100:50", Timestamp: time.Now()})
 
 	coverage := c.Coverage()
 	if coverage == nil {
 		t.Fatal("Coverage() returned nil")
 	}
 
-	// Verify coverage contains data
-	if len(coverage.Files) == 0 {
-		t.Error("Coverage() returned empty Files map")
+	// Verify coverage contains position data
+	if len(coverage.Positions) == 0 {
+		t.Error("Coverage() returned empty Positions map")
 	}
 }
 
@@ -281,7 +281,7 @@ func TestCollector_TotalCoveragePercent(t *testing.T) {
 	}
 
 	// Add some signals
-	_ = c.AddSignal(runner.CoverageSignal{SignalID: "test.sql:10", Timestamp: time.Now()})
+	_ = c.AddSignal(runner.CoverageSignal{SignalID: "test.sql:100:50", Timestamp: time.Now()})
 
 	percent = c.TotalCoveragePercent()
 	if percent < 0 || percent > 100 {
@@ -294,22 +294,22 @@ func TestCollector_MultipleFiles(t *testing.T) {
 
 	now := time.Now()
 	// Add signals for multiple files
-	_ = c.AddSignal(runner.CoverageSignal{SignalID: "file1.sql:10", Timestamp: now})
-	_ = c.AddSignal(runner.CoverageSignal{SignalID: "file1.sql:20", Timestamp: now.Add(time.Second)})
-	_ = c.AddSignal(runner.CoverageSignal{SignalID: "file2.sql:15", Timestamp: now.Add(2 * time.Second)})
+	_ = c.AddSignal(runner.CoverageSignal{SignalID: "file1.sql:100:50", Timestamp: now})
+	_ = c.AddSignal(runner.CoverageSignal{SignalID: "file1.sql:200:60", Timestamp: now.Add(time.Second)})
+	_ = c.AddSignal(runner.CoverageSignal{SignalID: "file2.sql:150:55", Timestamp: now.Add(2 * time.Second)})
 
-	// Verify file1 coverage
-	hits1 := c.GetFileCoverage("file1.sql")
-	if hits1[10] != 1 {
-		t.Errorf("file1.sql line 10 hit count = %d, want 1", hits1[10])
+	// Verify file1 position coverage
+	posHits1 := c.GetFilePositionCoverage("file1.sql")
+	if posHits1["100:50"] != 1 {
+		t.Errorf("file1.sql position 100:50 hit count = %d, want 1", posHits1["100:50"])
 	}
-	if hits1[20] != 1 {
-		t.Errorf("file1.sql line 20 hit count = %d, want 1", hits1[20])
+	if posHits1["200:60"] != 1 {
+		t.Errorf("file1.sql position 200:60 hit count = %d, want 1", posHits1["200:60"])
 	}
 
-	// Verify file2 coverage
-	hits2 := c.GetFileCoverage("file2.sql")
-	if hits2[15] != 1 {
-		t.Errorf("file2.sql line 15 hit count = %d, want 1", hits2[15])
+	// Verify file2 position coverage
+	posHits2 := c.GetFilePositionCoverage("file2.sql")
+	if posHits2["150:55"] != 1 {
+		t.Errorf("file2.sql position 150:55 hit count = %d, want 1", posHits2["150:55"])
 	}
 }

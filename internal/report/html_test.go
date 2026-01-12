@@ -10,15 +10,15 @@ import (
 )
 
 func TestHTMLReporter_Format(t *testing.T) {
-	// Create test coverage data
+	// Create test coverage data with positions
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
-		Files: map[string]coverage.FileHits{
+		Positions: map[string]coverage.PositionHits{
 			"test.sql": {
-				1: 5,
-				2: 3,
-				3: 0,
+				"0:10":  5,
+				"20:15": 3,
+				"50:20": 0,
 			},
 		},
 	}
@@ -98,15 +98,15 @@ func TestHTMLReporter_MultipleFiles(t *testing.T) {
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
-		Files: map[string]coverage.FileHits{
+		Positions: map[string]coverage.PositionHits{
 			"auth.sql": {
-				10: 2,
-				11: 0,
-				12: 1,
+				"0:10":  2,
+				"20:15": 0,
+				"50:20": 1,
 			},
 			"user.sql": {
-				1: 5,
-				2: 3,
+				"0:10":  5,
+				"30:20": 3,
 			},
 		},
 	}
@@ -135,7 +135,7 @@ func TestHTMLReporter_EmptyCoverage(t *testing.T) {
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
-		Files:     map[string]coverage.FileHits{},
+		Positions: map[string]coverage.PositionHits{},
 	}
 
 	reporter := NewHTMLReporter()
@@ -162,17 +162,17 @@ func TestHTMLReporter_CoveragePercentages(t *testing.T) {
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
-		Files: map[string]coverage.FileHits{
+		Positions: map[string]coverage.PositionHits{
 			"high_coverage.sql": {
-				1: 10,
-				2: 5,
-				3: 1,
-				4: 0, // 75% coverage (3/4)
+				"0:10":  10,
+				"20:15": 5,
+				"40:20": 1,
+				"70:25": 0, // 75% coverage (3/4)
 			},
 			"low_coverage.sql": {
-				1: 0,
-				2: 0,
-				3: 1, // 33.33% coverage (1/3)
+				"0:10":  0,
+				"20:15": 0,
+				"40:20": 1, // 33.33% coverage (1/3)
 			},
 		},
 	}
@@ -201,8 +201,8 @@ func TestHTMLReporter_CSSPresent(t *testing.T) {
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
-		Files: map[string]coverage.FileHits{
-			"test.sql": {1: 1},
+		Positions: map[string]coverage.PositionHits{
+			"test.sql": {"0:10": 1},
 		},
 	}
 
@@ -237,16 +237,16 @@ func TestHTMLReporter_CSSPresent(t *testing.T) {
 	}
 }
 
-func TestHTMLReporter_LineCoverage(t *testing.T) {
-	// Test line coverage indicators with Go-style format
+func TestHTMLReporter_PositionCoverage(t *testing.T) {
+	// Test position coverage indicators with Go-style format
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
-		Files: map[string]coverage.FileHits{
+		Positions: map[string]coverage.PositionHits{
 			"test.sql": {
-				1: 5,  // covered
-				2: 0,  // uncovered
-				3: 10, // covered
+				"0:10":  5,  // covered
+				"20:15": 0,  // uncovered
+				"50:20": 10, // covered
 			},
 		},
 	}
@@ -259,12 +259,12 @@ func TestHTMLReporter_LineCoverage(t *testing.T) {
 
 	// In Go format, we use <span> elements with coverage classes and title attributes
 	// Check for coverage classes
-	if !strings.Contains(output, "cov5") && !strings.Contains(output, "cov8") {
-		t.Error("Missing coverage class for line 1 (5 hits)")
+	if !strings.Contains(output, "cov5") && !strings.Contains(output, "cov10") {
+		t.Error("Missing coverage class for covered positions")
 	}
 
 	if !strings.Contains(output, "cov0") {
-		t.Error("Missing cov0 class for uncovered line")
+		t.Error("Missing cov0 class for uncovered position")
 	}
 }
 
@@ -273,8 +273,8 @@ func TestHTMLReporter_ValidHTML5(t *testing.T) {
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
-		Files: map[string]coverage.FileHits{
-			"test.sql": {1: 1},
+		Positions: map[string]coverage.PositionHits{
+			"test.sql": {"0:10": 1},
 		},
 	}
 
@@ -300,9 +300,9 @@ func TestHTMLReporter_EscapeHTML(t *testing.T) {
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
-		Files: map[string]coverage.FileHits{
-			"test<script>.sql": {1: 1},
-			"file&name.sql":    {1: 1},
+		Positions: map[string]coverage.PositionHits{
+			"test<script>.sql": {"0:10": 1},
+			"file&name.sql":    {"0:10": 1},
 		},
 	}
 
@@ -327,9 +327,9 @@ func TestHTMLReporter_SummarySection(t *testing.T) {
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
-		Files: map[string]coverage.FileHits{
-			"test1.sql": {1: 1, 2: 0},
-			"test2.sql": {1: 1, 2: 1},
+		Positions: map[string]coverage.PositionHits{
+			"test1.sql": {"0:10": 1, "20:15": 0},
+			"test2.sql": {"0:10": 1, "20:15": 1},
 		},
 	}
 
@@ -351,21 +351,37 @@ func TestHTMLReporter_SummarySection(t *testing.T) {
 }
 
 func TestHTMLReporter_CoverageClasses(t *testing.T) {
-	// Test coverage class assignments (cov0-cov8)
+	// Test coverage class assignments (cov0-cov10)
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
-		Files: map[string]coverage.FileHits{
+		Positions: map[string]coverage.PositionHits{
 			"high.sql": {
-				1: 1, 2: 1, 3: 1, 4: 1, 5: 1,
-				6: 1, 7: 1, 8: 1, 9: 1, 10: 0,
-			}, // 90% coverage - should use cov1-cov8
+				"0:10":   1,
+				"15:10":  1,
+				"30:10":  1,
+				"45:10":  1,
+				"60:10":  1,
+				"75:10":  1,
+				"90:10":  1,
+				"105:10": 1,
+				"120:10": 1,
+				"135:10": 0,
+			}, // 90% coverage
 			"medium.sql": {
-				1: 3, 2: 3, 3: 3, 4: 0, 5: 0,
-			}, // 60% coverage - should use cov3
+				"0:10":  3,
+				"15:10": 3,
+				"30:10": 3,
+				"45:10": 0,
+				"60:10": 0,
+			}, // 60% coverage
 			"low.sql": {
-				1: 5, 2: 0, 3: 0, 4: 0, 5: 0,
-			}, // 20% coverage - should use cov5 and cov0
+				"0:10":  5,
+				"15:10": 0,
+				"30:10": 0,
+				"45:10": 0,
+				"60:10": 0,
+			}, // 20% coverage
 		},
 	}
 
@@ -375,15 +391,14 @@ func TestHTMLReporter_CoverageClasses(t *testing.T) {
 		t.Fatalf("FormatString failed: %v", err)
 	}
 
-	// Count occurrences of coverage classes (Go-style)
-	// Note: we can't be too specific as the order may vary
-	if !strings.Contains(output, `class="source-line cov0"`) &&
-		!strings.Contains(output, `cov0`) {
-		t.Error("Missing cov0 coverage class for uncovered lines")
+	// Check that cov0 is present for uncovered positions
+	if !strings.Contains(output, `cov0`) {
+		t.Error("Missing cov0 coverage class for uncovered positions")
 	}
 
+	// Check for covered position classes
 	if !strings.Contains(output, `cov1`) && !strings.Contains(output, `cov3`) && !strings.Contains(output, `cov5`) {
-		t.Error("Missing covered line classes (cov1, cov3, cov5, etc.)")
+		t.Error("Missing covered position classes (cov1, cov3, cov5, etc.)")
 	}
 }
 
@@ -392,7 +407,7 @@ func TestHTMLReporter_Footer(t *testing.T) {
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
-		Files:     map[string]coverage.FileHits{},
+		Positions: map[string]coverage.PositionHits{},
 	}
 
 	reporter := NewHTMLReporter()

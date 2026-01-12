@@ -11,20 +11,20 @@ import (
 )
 
 func TestJSONReporter_Format(t *testing.T) {
-	// Create test coverage data
+	// Create test coverage data with positions
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
-		Files: map[string]coverage.FileHits{
+		Positions: map[string]coverage.PositionHits{
 			"test.sql": {
-				1: 5,
-				2: 3,
-				3: 0,
+				"0:10":  5,
+				"20:15": 3,
+				"50:20": 0,
 			},
 			"auth.sql": {
-				10: 2,
-				11: 0,
-				12: 1,
+				"0:10":  2,
+				"30:20": 0,
+				"60:15": 1,
 			},
 		},
 	}
@@ -52,25 +52,25 @@ func TestJSONReporter_Format(t *testing.T) {
 			t.Errorf("Version mismatch: got %s, want %s", decoded.Version, cov.Version)
 		}
 
-		if len(decoded.Files) != len(cov.Files) {
-			t.Errorf("Files count mismatch: got %d, want %d", len(decoded.Files), len(cov.Files))
+		if len(decoded.Positions) != len(cov.Positions) {
+			t.Errorf("Positions count mismatch: got %d, want %d", len(decoded.Positions), len(cov.Positions))
 		}
 
 		// Verify file coverage
-		for file, hits := range cov.Files {
-			decodedHits, ok := decoded.Files[file]
+		for file, posHits := range cov.Positions {
+			decodedPosHits, ok := decoded.Positions[file]
 			if !ok {
 				t.Errorf("File %s not found in output", file)
 				continue
 			}
 
-			if len(decodedHits) != len(hits) {
-				t.Errorf("File %s: line count mismatch: got %d, want %d", file, len(decodedHits), len(hits))
+			if len(decodedPosHits) != len(posHits) {
+				t.Errorf("File %s: position count mismatch: got %d, want %d", file, len(decodedPosHits), len(posHits))
 			}
 
-			for line, count := range hits {
-				if decodedHits[line] != count {
-					t.Errorf("File %s, line %d: hit count mismatch: got %d, want %d", file, line, decodedHits[line], count)
+			for posKey, count := range posHits {
+				if decodedPosHits[posKey] != count {
+					t.Errorf("File %s, position %s: hit count mismatch: got %d, want %d", file, posKey, decodedPosHits[posKey], count)
 				}
 			}
 		}
@@ -110,7 +110,7 @@ func TestJSONReporter_EmptyCoverage(t *testing.T) {
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
-		Files:     map[string]coverage.FileHits{},
+		Positions: map[string]coverage.PositionHits{},
 	}
 
 	reporter := NewJSONReporter()
@@ -127,8 +127,8 @@ func TestJSONReporter_EmptyCoverage(t *testing.T) {
 		t.Fatalf("Invalid JSON output: %v", err)
 	}
 
-	if len(decoded.Files) != 0 {
-		t.Errorf("Expected empty files map, got %d files", len(decoded.Files))
+	if len(decoded.Positions) != 0 {
+		t.Errorf("Expected empty positions map, got %d files", len(decoded.Positions))
 	}
 }
 
@@ -137,11 +137,11 @@ func TestJSONReporter_FormatSummary(t *testing.T) {
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
-		Files: map[string]coverage.FileHits{
+		Positions: map[string]coverage.PositionHits{
 			"test.sql": {
-				1: 5,
-				2: 3,
-				3: 0,
+				"0:10":  5,
+				"20:15": 3,
+				"50:20": 0,
 			},
 		},
 	}
@@ -153,7 +153,7 @@ func TestJSONReporter_FormatSummary(t *testing.T) {
 	}
 
 	// Verify JSON is valid
-	var summary map[string]interface{}
+	var summary map[string]any
 	err = json.Unmarshal([]byte(output), &summary)
 	if err != nil {
 		t.Fatalf("Invalid JSON output: %v", err)
@@ -168,13 +168,13 @@ func TestJSONReporter_FormatSummary(t *testing.T) {
 		t.Error("Missing total_coverage_percent field")
 	}
 
-	files, ok := summary["files"].(map[string]interface{})
+	files, ok := summary["files"].(map[string]any)
 	if !ok {
 		t.Fatal("Files field is not a map")
 	}
 
-	if len(files) != len(cov.Files) {
-		t.Errorf("Files count mismatch: got %d, want %d", len(files), len(cov.Files))
+	if len(files) != len(cov.Positions) {
+		t.Errorf("Files count mismatch: got %d, want %d", len(files), len(cov.Positions))
 	}
 }
 
@@ -184,12 +184,12 @@ func TestJSONReporter_SchemaCompliance(t *testing.T) {
 	cov := &coverage.Coverage{
 		Version:   "1.0",
 		Timestamp: timestamp,
-		Files: map[string]coverage.FileHits{
+		Positions: map[string]coverage.PositionHits{
 			"complex.sql": {
-				1:  10,
-				5:  0,
-				10: 1,
-				15: 100,
+				"0:10":   10,
+				"50:20":  0,
+				"100:30": 1,
+				"150:40": 100,
 			},
 		},
 	}
@@ -200,8 +200,8 @@ func TestJSONReporter_SchemaCompliance(t *testing.T) {
 		t.Fatalf("FormatString failed: %v", err)
 	}
 
-	// Verify required fields are present (note: Go marshals with capital letters)
-	requiredFields := []string{"Version", "Timestamp", "Files"}
+	// Verify required fields are present
+	requiredFields := []string{"version", "timestamp", "positions"}
 	for _, field := range requiredFields {
 		if !strings.Contains(output, `"`+field+`"`) {
 			t.Errorf("Missing required field: %s", field)
@@ -209,22 +209,22 @@ func TestJSONReporter_SchemaCompliance(t *testing.T) {
 	}
 
 	// Verify JSON structure matches schema
-	var decoded map[string]interface{}
+	var decoded map[string]any
 	err = json.Unmarshal([]byte(output), &decoded)
 	if err != nil {
 		t.Fatalf("Invalid JSON: %v", err)
 	}
 
-	// Check top-level fields (capitalized as per Go struct marshaling)
-	if _, ok := decoded["Version"].(string); !ok {
-		t.Error("Version field should be a string")
+	// Check top-level fields
+	if _, ok := decoded["version"].(string); !ok {
+		t.Error("version field should be a string")
 	}
 
-	if _, ok := decoded["Timestamp"].(string); !ok {
-		t.Error("Timestamp field should be a string")
+	if _, ok := decoded["timestamp"].(string); !ok {
+		t.Error("timestamp field should be a string")
 	}
 
-	if _, ok := decoded["Files"].(map[string]interface{}); !ok {
-		t.Error("Files field should be an object")
+	if _, ok := decoded["positions"].(map[string]any); !ok {
+		t.Error("positions field should be an object")
 	}
 }

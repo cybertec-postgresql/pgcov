@@ -38,6 +38,7 @@ func ExtractStatements(sql string, result *pgquery.ParseResult) ([]*Statement, e
 
 		statements = append(statements, &Statement{
 			RawSQL:    rawSQL,
+			StartPos:  int(stmtLocation),
 			StartLine: startLine,
 			EndLine:   endLine,
 			Type:      stmtType,

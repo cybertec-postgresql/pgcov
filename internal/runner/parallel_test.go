@@ -124,13 +124,13 @@ func TestParallelExecution(t *testing.T) {
 	cov1 := collector1.Coverage()
 	cov2 := collector2.Coverage()
 
-	if len(cov1.Files) != len(cov2.Files) {
+	if len(cov1.Positions) != len(cov2.Positions) {
 		t.Errorf("Coverage file count mismatch: parallel=%d, sequential=%d",
-			len(cov1.Files), len(cov2.Files))
+			len(cov1.Positions), len(cov2.Positions))
 	}
 
-	for file := range cov1.Files {
-		if _, exists := cov2.Files[file]; !exists {
+	for file := range cov1.Positions {
+		if _, exists := cov2.Positions[file]; !exists {
 			t.Errorf("File %s present in parallel coverage but not sequential", file)
 		}
 	}

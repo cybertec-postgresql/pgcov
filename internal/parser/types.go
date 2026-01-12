@@ -39,6 +39,7 @@ type ParsedSQL struct {
 // Statement represents a single SQL statement with location information
 type Statement struct {
 	RawSQL    string           // Original SQL text
+	StartPos  int              // Byte offset in source file
 	StartLine int              // 1-indexed line number
 	EndLine   int              // 1-indexed line number
 	Type      StatementType    // Statement classification

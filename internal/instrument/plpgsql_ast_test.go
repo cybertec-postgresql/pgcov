@@ -62,11 +62,15 @@ $$ LANGUAGE plpgsql;`
 		t.Errorf("Expected 4 coverage points, got %d", len(instrumented.Locations))
 	}
 
-	// Verify coverage points are at the correct lines
+	// Verify coverage points are at the correct lines (by converting positions to lines)
 	expectedLines := []int{7, 9, 11, 14}
 	for i, cp := range instrumented.Locations {
-		if cp.Line != expectedLines[i] {
-			t.Errorf("Coverage point %d: expected line %d, got %d", i, expectedLines[i], cp.Line)
+		// Convert position to line number for validation
+		// For this test, we'll use the original SQL content
+		sqlContent, _ := os.ReadFile(tmpFile)
+		actualLine := ConvertPositionToLine(string(sqlContent), cp.StartPos)
+		if actualLine != expectedLines[i] {
+			t.Errorf("Coverage point %d: expected line %d, got %d", i, expectedLines[i], actualLine)
 		}
 		if cp.ImplicitCoverage {
 			t.Errorf("Coverage point %d: should not be implicit", i)

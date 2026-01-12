@@ -60,6 +60,11 @@ func (s *Store) Load() (*Coverage, error) {
 		return nil, fmt.Errorf("failed to parse coverage file: %w", err)
 	}
 
+	// Ensure Positions map is initialized
+	if coverage.Positions == nil {
+		coverage.Positions = make(map[string]PositionHits)
+	}
+
 	return &coverage, nil
 }
 

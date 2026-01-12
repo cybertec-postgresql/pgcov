@@ -23,7 +23,7 @@ type Config struct {
 // ConfigError represents a configuration validation error
 type ConfigError struct {
 	Field      string
-	Value      interface{}
+	Value      any
 	Message    string
 	Suggestion string
 }
