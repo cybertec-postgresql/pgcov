@@ -53,34 +53,34 @@ func (l *Logger) IsVerbose() bool {
 }
 
 // Info logs an informational message (always shown)
-func (l *Logger) Info(format string, args ...interface{}) {
+func (l *Logger) Info(format string, args ...any) {
 	l.info.Printf(format, args...)
 }
 
 // Debug logs a debug message (only shown if verbose is enabled)
-func (l *Logger) Debug(format string, args ...interface{}) {
+func (l *Logger) Debug(format string, args ...any) {
 	if l.verbose {
 		l.debug.Printf(format, args...)
 	}
 }
 
 // Error logs an error message (always shown)
-func (l *Logger) Error(format string, args ...interface{}) {
+func (l *Logger) Error(format string, args ...any) {
 	l.error.Printf(format, args...)
 }
 
 // Debugf is an alias for Debug
-func (l *Logger) Debugf(format string, args ...interface{}) {
+func (l *Logger) Debugf(format string, args ...any) {
 	l.Debug(format, args...)
 }
 
 // Infof is an alias for Info
-func (l *Logger) Infof(format string, args ...interface{}) {
+func (l *Logger) Infof(format string, args ...any) {
 	l.Info(format, args...)
 }
 
 // Errorf is an alias for Error
-func (l *Logger) Errorf(format string, args ...interface{}) {
+func (l *Logger) Errorf(format string, args ...any) {
 	l.Error(format, args...)
 }
 
@@ -97,41 +97,41 @@ func IsVerbose() bool {
 }
 
 // Info logs an informational message using the default logger
-func Info(format string, args ...interface{}) {
+func Info(format string, args ...any) {
 	defaultLogger.Info(format, args...)
 }
 
 // Debug logs a debug message using the default logger (only shown if verbose is enabled)
-func Debug(format string, args ...interface{}) {
+func Debug(format string, args ...any) {
 	defaultLogger.Debug(format, args...)
 }
 
 // Error logs an error message using the default logger
-func Error(format string, args ...interface{}) {
+func Error(format string, args ...any) {
 	defaultLogger.Error(format, args...)
 }
 
 // Debugf is an alias for Debug
-func Debugf(format string, args ...interface{}) {
+func Debugf(format string, args ...any) {
 	Debug(format, args...)
 }
 
 // Infof is an alias for Info
-func Infof(format string, args ...interface{}) {
+func Infof(format string, args ...any) {
 	Info(format, args...)
 }
 
 // Errorf is an alias for Error
-func Errorf(format string, args ...interface{}) {
+func Errorf(format string, args ...any) {
 	Error(format, args...)
 }
 
 // Printf is a general-purpose print function that respects verbose mode
-func Printf(format string, args ...interface{}) {
+func Printf(format string, args ...any) {
 	fmt.Printf(format, args...)
 }
 
 // Println is a general-purpose print function that respects verbose mode
-func Println(args ...interface{}) {
+func Println(args ...any) {
 	fmt.Println(args...)
 }

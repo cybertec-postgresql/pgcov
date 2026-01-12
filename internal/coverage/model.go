@@ -1,30 +1,20 @@
 package coverage
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Coverage represents aggregated coverage data across all tests
+// Uses position-based coverage only (byte offsets)
 type Coverage struct {
-	Version   string              // Schema version (e.g., "1.0")
-	Timestamp time.Time           // When coverage collected
-	Files     map[string]FileHits // Key: relative file path, Value: map of line numbers to hit counts
+	Version   string                  `json:"version"`   // Schema version (e.g., "1.0")
+	Timestamp time.Time               `json:"timestamp"` // When coverage collected
+	Positions map[string]PositionHits `json:"positions"` // Key: relative file path, Value: map of position keys to hit counts
 }
 
-// FileHits represents line hit counts for a single file
-type FileHits map[int]int // Key: line number, Value: hit count
-
-// FileCoverage represents coverage data for a single source file (for compatibility)
-type FileCoverage struct {
-	Path     string                     // Relative file path
-	Lines    map[int]*LineCoverage      // Key: line number
-	Branches map[string]*BranchCoverage // Key: branch identifier
-}
-
-// LineCoverage represents coverage data for a single line (for compatibility)
-type LineCoverage struct {
-	LineNumber int  // 1-indexed line number
-	HitCount   int  // Number of times line executed
-	Covered    bool // true if HitCount > 0
-}
+// PositionHits represents position hit counts for a single file
+type PositionHits map[string]int // Key: "startPos:length", Value: hit count
 
 // BranchCoverage represents coverage data for a single branch
 type BranchCoverage struct {
@@ -38,25 +28,20 @@ func NewCoverage() *Coverage {
 	return &Coverage{
 		Version:   "1.0",
 		Timestamp: time.Now(),
-		Files:     make(map[string]FileHits),
+		Positions: make(map[string]PositionHits),
 	}
 }
 
-// NewFileCoverage creates a new FileCoverage instance (for compatibility)
-func NewFileCoverage(path string) *FileCoverage {
-	return &FileCoverage{
-		Path:     path,
-		Lines:    make(map[int]*LineCoverage),
-		Branches: make(map[string]*BranchCoverage),
+// AddPosition adds or updates position-based coverage data
+func (c *Coverage) AddPosition(file string, startPos int, length int, hitCount int) {
+	if c.Positions == nil {
+		c.Positions = make(map[string]PositionHits)
 	}
-}
-
-// AddLine adds or updates line coverage data
-func (c *Coverage) AddLine(file string, line int, hitCount int) {
-	if c.Files[file] == nil {
-		c.Files[file] = make(FileHits)
+	if c.Positions[file] == nil {
+		c.Positions[file] = make(PositionHits)
 	}
-	c.Files[file][line] = hitCount
+	posKey := formatPositionKey(startPos, length)
+	c.Positions[file][posKey] = hitCount
 }
 
 // AddBranch adds or updates branch coverage data (placeholder for future)
@@ -66,40 +51,60 @@ func (c *Coverage) AddBranch(_ string, branchID string, hitCount int) {
 	_ = hitCount
 }
 
-// LineCoveragePercent calculates the line coverage percentage for a file
-func (c *Coverage) LineCoveragePercent(file string) float64 {
-	hits := c.Files[file]
-	if len(hits) == 0 {
+// PositionCoveragePercent calculates position coverage percentage for a file
+func (c *Coverage) PositionCoveragePercent(file string) float64 {
+	posHits := c.Positions[file]
+	if len(posHits) == 0 {
 		return 0.0
 	}
 
 	covered := 0
-	for _, count := range hits {
+	for _, count := range posHits {
 		if count > 0 {
 			covered++
 		}
 	}
 
-	return float64(covered) / float64(len(hits)) * 100.0
+	return float64(covered) / float64(len(posHits)) * 100.0
 }
 
-// TotalLineCoveragePercent calculates overall line coverage percentage
-func (c *Coverage) TotalLineCoveragePercent() float64 {
-	totalLines := 0
-	coveredLines := 0
+// TotalPositionCoveragePercent calculates overall position coverage percentage
+func (c *Coverage) TotalPositionCoveragePercent() float64 {
+	totalPositions := 0
+	coveredPositions := 0
 
-	for _, hits := range c.Files {
-		for _, count := range hits {
-			totalLines++
+	for _, posHits := range c.Positions {
+		for _, count := range posHits {
+			totalPositions++
 			if count > 0 {
-				coveredLines++
+				coveredPositions++
 			}
 		}
 	}
 
-	if totalLines == 0 {
+	if totalPositions == 0 {
 		return 0.0
 	}
 
-	return float64(coveredLines) / float64(totalLines) * 100.0
+	return float64(coveredPositions) / float64(totalPositions) * 100.0
+}
+
+// formatPositionKey creates a string key from startPos and length
+func formatPositionKey(startPos int, length int) string {
+	return fmt.Sprintf("%d:%d", startPos, length)
+}
+
+// ParsePositionKey parses a position key back into startPos and length
+func ParsePositionKey(posKey string) (startPos int, length int, err error) {
+	_, err = fmt.Sscanf(posKey, "%d:%d", &startPos, &length)
+	return
+}
+
+// GetFiles returns a list of all files with coverage data
+func (c *Coverage) GetFiles() []string {
+	var files []string
+	for file := range c.Positions {
+		files = append(files, file)
+	}
+	return files
 }

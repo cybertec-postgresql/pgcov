@@ -53,23 +53,24 @@ func (c *Collector) AddSignal(signal runner.CoverageSignal) error {
 
 // addSignalUnsafe adds a signal without locking (internal use when lock is already held)
 func (c *Collector) addSignalUnsafe(signal runner.CoverageSignal) error {
-	// Parse signal ID to extract file, line, and branch
-	file, line, branch, err := instrument.ParseSignalID(signal.SignalID)
+	// Parse signal ID to extract file, startPos, length, and branch
+	file, startPos, length, branch, err := instrument.ParseSignalID(signal.SignalID)
 	if err != nil {
 		return fmt.Errorf("invalid signal ID: %w", err)
 	}
 
-	// Add line or branch coverage
+	// Add position-based coverage only
 	if branch == "" {
-		// Line coverage - increment hit count
-		if existingCount, exists := c.coverage.Files[file][line]; exists {
-			c.coverage.AddLine(file, line, existingCount+1)
+		// Position coverage - increment hit count
+		posKey := fmt.Sprintf("%d:%d", startPos, length)
+		if existingCount, exists := c.coverage.Positions[file][posKey]; exists {
+			c.coverage.AddPosition(file, startPos, length, existingCount+1)
 		} else {
-			c.coverage.AddLine(file, line, 1)
+			c.coverage.AddPosition(file, startPos, length, 1)
 		}
 	} else {
 		// Branch coverage (placeholder for future)
-		branchKey := fmt.Sprintf("%d:%s", line, branch)
+		branchKey := fmt.Sprintf("%d:%d:%s", startPos, length, branch)
 		c.coverage.AddBranch(file, branchKey, 1)
 	}
 
@@ -97,32 +98,41 @@ func (c *Collector) Merge(other *Collector) error {
 	other.mu.Lock()
 	defer other.mu.Unlock()
 
-	for file, otherHits := range other.coverage.Files {
-		// Merge line hit counts
-		for line, count := range otherHits {
-			if existingCount, exists := c.coverage.Files[file][line]; exists {
-				c.coverage.AddLine(file, line, existingCount+count)
+	// Merge position hit counts only
+	for file, otherPosHits := range other.coverage.Positions {
+		for posKey, count := range otherPosHits {
+			// Parse position key to get startPos and length
+			var startPos, length int
+			_, err := fmt.Sscanf(posKey, "%d:%d", &startPos, &length)
+			if err != nil {
+				continue // Skip invalid keys
+			}
+
+			if existingCount, exists := c.coverage.Positions[file][posKey]; exists {
+				c.coverage.AddPosition(file, startPos, length, existingCount+count)
 			} else {
-				c.coverage.AddLine(file, line, count)
+				c.coverage.AddPosition(file, startPos, length, count)
 			}
 		}
 	}
+
 	return nil
 }
 
-// GetFileCoverage returns coverage data for a specific file (simplified)
-func (c *Collector) GetFileCoverage(filePath string) FileHits {
+// GetFilePositionCoverage returns position coverage data for a specific file
+func (c *Collector) GetFilePositionCoverage(filePath string) PositionHits {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.coverage.Files[filePath]
+	return c.coverage.Positions[filePath]
 }
 
 // GetFileList returns a list of all files with coverage data
 func (c *Collector) GetFileList() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	var files []string
-	for file := range c.coverage.Files {
+	for file := range c.coverage.Positions {
 		files = append(files, file)
 	}
 	return files
@@ -132,5 +142,5 @@ func (c *Collector) GetFileList() []string {
 func (c *Collector) TotalCoveragePercent() float64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.coverage.TotalLineCoveragePercent()
+	return c.coverage.TotalPositionCoveragePercent()
 }

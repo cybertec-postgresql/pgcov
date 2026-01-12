@@ -46,23 +46,23 @@ func (r *JSONReporter) FormatString(cov *coverage.Coverage) (string, error) {
 
 // FormatSummary formats a summary view of coverage as JSON
 func (r *JSONReporter) FormatSummary(cov *coverage.Coverage) (string, error) {
-	summary := make(map[string]interface{})
+	summary := make(map[string]any)
 	summary["version"] = cov.Version
 	summary["timestamp"] = cov.Timestamp
-	summary["total_coverage_percent"] = cov.TotalLineCoveragePercent()
+	summary["total_coverage_percent"] = cov.TotalPositionCoveragePercent()
 
-	files := make(map[string]interface{})
-	for path, hits := range cov.Files {
+	files := make(map[string]any)
+	for path, posHits := range cov.Positions {
 		covered := 0
-		for _, count := range hits {
+		for _, count := range posHits {
 			if count > 0 {
 				covered++
 			}
 		}
-		files[path] = map[string]interface{}{
-			"lines_covered":    covered,
-			"lines_total":      len(hits),
-			"coverage_percent": cov.LineCoveragePercent(path),
+		files[path] = map[string]any{
+			"positions_covered": covered,
+			"positions_total":   len(posHits),
+			"coverage_percent":  cov.PositionCoveragePercent(path),
 		}
 	}
 	summary["files"] = files

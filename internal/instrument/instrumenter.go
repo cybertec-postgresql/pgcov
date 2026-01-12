@@ -143,15 +143,15 @@ func isDOBlock(stmt *parser.Statement) bool {
 // Uses pg_query.ParsePlPgSqlToJSON to properly parse the PL/pgSQL AST
 func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
 	lines := strings.Split(stmt.RawSQL, "\n")
-	
+
 	// Trim leading comments and empty lines from stmt.RawSQL to ensure PL/pgSQL parser line numbers match
 	// We need to find the line that starts with CREATE FUNCTION/PROCEDURE or DO
 	firstNonEmptyIndex := 0
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		// Look for CREATE FUNCTION, CREATE PROCEDURE, or DO
-		if strings.HasPrefix(strings.ToUpper(trimmed), "CREATE") || 
-		   strings.HasPrefix(strings.ToUpper(trimmed), "DO") {
+		if strings.HasPrefix(strings.ToUpper(trimmed), "CREATE") ||
+			strings.HasPrefix(strings.ToUpper(trimmed), "DO") {
 			firstNonEmptyIndex = i
 			break
 		}
@@ -172,7 +172,7 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 	}
 
 	// Parse the JSON result to extract statement line numbers
-	var plpgsqlAST []map[string]interface{}
+	var plpgsqlAST []map[string]any
 	if err := json.Unmarshal([]byte(jsonResult), &plpgsqlAST); err != nil {
 		// Return empty instrumentation for invalid AST
 		return stmt.RawSQL, nil
@@ -189,6 +189,7 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 	// Find the function body offset using the AST structure (using trimmed SQL)
 	trimmedStmt := &parser.Statement{
 		RawSQL:    trimmedSQL,
+		StartPos:  stmt.StartPos + calculateByteOffset(lines, lineOffset), // Absolute position
 		StartLine: stmt.StartLine + lineOffset,
 		EndLine:   stmt.EndLine,
 		Type:      stmt.Type,
@@ -213,7 +214,7 @@ func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string,
 }
 
 // extractExecutableLines walks the PL/pgSQL AST and extracts line numbers of executable statements
-func extractExecutableLines(ast []map[string]interface{}) []int {
+func extractExecutableLines(ast []map[string]any) []int {
 	var lines []int
 
 	for _, node := range ast {
@@ -224,25 +225,25 @@ func extractExecutableLines(ast []map[string]interface{}) []int {
 }
 
 // walkPlpgsqlNode recursively walks a PL/pgSQL AST node and extracts executable line numbers
-func walkPlpgsqlNode(node map[string]interface{}) []int {
+func walkPlpgsqlNode(node map[string]any) []int {
 	var lines []int
 
 	for key, value := range node {
 		switch key {
 		case "PLpgSQL_function":
 			// Walk the function action (body)
-			if funcMap, ok := value.(map[string]interface{}); ok {
-				if action, ok := funcMap["action"].(map[string]interface{}); ok {
+			if funcMap, ok := value.(map[string]any); ok {
+				if action, ok := funcMap["action"].(map[string]any); ok {
 					lines = append(lines, walkPlpgsqlNode(action)...)
 				}
 			}
 
 		case "PLpgSQL_stmt_block":
 			// Walk block body
-			if blockMap, ok := value.(map[string]interface{}); ok {
-				if body, ok := blockMap["body"].([]interface{}); ok {
+			if blockMap, ok := value.(map[string]any); ok {
+				if body, ok := blockMap["body"].([]any); ok {
 					for _, stmt := range body {
-						if stmtMap, ok := stmt.(map[string]interface{}); ok {
+						if stmtMap, ok := stmt.(map[string]any); ok {
 							lines = append(lines, walkPlpgsqlNode(stmtMap)...)
 						}
 					}
@@ -251,7 +252,7 @@ func walkPlpgsqlNode(node map[string]interface{}) []int {
 
 		case "PLpgSQL_stmt_assign":
 			// Assignment statement - executable
-			if stmtMap, ok := value.(map[string]interface{}); ok {
+			if stmtMap, ok := value.(map[string]any); ok {
 				if lineno, ok := stmtMap["lineno"].(float64); ok {
 					lines = append(lines, int(lineno))
 				}
@@ -259,7 +260,7 @@ func walkPlpgsqlNode(node map[string]interface{}) []int {
 
 		case "PLpgSQL_stmt_return":
 			// Return statement - executable
-			if stmtMap, ok := value.(map[string]interface{}); ok {
+			if stmtMap, ok := value.(map[string]any); ok {
 				if lineno, ok := stmtMap["lineno"].(float64); ok {
 					lines = append(lines, int(lineno))
 				}
@@ -267,23 +268,23 @@ func walkPlpgsqlNode(node map[string]interface{}) []int {
 
 		case "PLpgSQL_stmt_if":
 			// IF statement - walk branches
-			if stmtMap, ok := value.(map[string]interface{}); ok {
+			if stmtMap, ok := value.(map[string]any); ok {
 				// Walk then_body
-				if thenBody, ok := stmtMap["then_body"].([]interface{}); ok {
+				if thenBody, ok := stmtMap["then_body"].([]any); ok {
 					for _, stmt := range thenBody {
-						if s, ok := stmt.(map[string]interface{}); ok {
+						if s, ok := stmt.(map[string]any); ok {
 							lines = append(lines, walkPlpgsqlNode(s)...)
 						}
 					}
 				}
 				// Walk elsif_list
-				if elsifList, ok := stmtMap["elsif_list"].([]interface{}); ok {
+				if elsifList, ok := stmtMap["elsif_list"].([]any); ok {
 					for _, elsif := range elsifList {
-						if elsifMap, ok := elsif.(map[string]interface{}); ok {
-							if elsifStmt, ok := elsifMap["PLpgSQL_if_elsif"].(map[string]interface{}); ok {
-								if stmts, ok := elsifStmt["stmts"].([]interface{}); ok {
+						if elsifMap, ok := elsif.(map[string]any); ok {
+							if elsifStmt, ok := elsifMap["PLpgSQL_if_elsif"].(map[string]any); ok {
+								if stmts, ok := elsifStmt["stmts"].([]any); ok {
 									for _, stmt := range stmts {
-										if s, ok := stmt.(map[string]interface{}); ok {
+										if s, ok := stmt.(map[string]any); ok {
 											lines = append(lines, walkPlpgsqlNode(s)...)
 										}
 									}
@@ -293,9 +294,9 @@ func walkPlpgsqlNode(node map[string]interface{}) []int {
 					}
 				}
 				// Walk else_body
-				if elseBody, ok := stmtMap["else_body"].([]interface{}); ok {
+				if elseBody, ok := stmtMap["else_body"].([]any); ok {
 					for _, stmt := range elseBody {
-						if s, ok := stmt.(map[string]interface{}); ok {
+						if s, ok := stmt.(map[string]any); ok {
 							lines = append(lines, walkPlpgsqlNode(s)...)
 						}
 					}
@@ -304,10 +305,10 @@ func walkPlpgsqlNode(node map[string]interface{}) []int {
 
 		case "PLpgSQL_stmt_loop":
 			// Loop statement
-			if stmtMap, ok := value.(map[string]interface{}); ok {
-				if body, ok := stmtMap["body"].([]interface{}); ok {
+			if stmtMap, ok := value.(map[string]any); ok {
+				if body, ok := stmtMap["body"].([]any); ok {
 					for _, stmt := range body {
-						if s, ok := stmt.(map[string]interface{}); ok {
+						if s, ok := stmt.(map[string]any); ok {
 							lines = append(lines, walkPlpgsqlNode(s)...)
 						}
 					}
@@ -316,10 +317,10 @@ func walkPlpgsqlNode(node map[string]interface{}) []int {
 
 		case "PLpgSQL_stmt_while":
 			// While loop
-			if stmtMap, ok := value.(map[string]interface{}); ok {
-				if body, ok := stmtMap["body"].([]interface{}); ok {
+			if stmtMap, ok := value.(map[string]any); ok {
+				if body, ok := stmtMap["body"].([]any); ok {
 					for _, stmt := range body {
-						if s, ok := stmt.(map[string]interface{}); ok {
+						if s, ok := stmt.(map[string]any); ok {
 							lines = append(lines, walkPlpgsqlNode(s)...)
 						}
 					}
@@ -328,10 +329,10 @@ func walkPlpgsqlNode(node map[string]interface{}) []int {
 
 		case "PLpgSQL_stmt_fori", "PLpgSQL_stmt_fors", "PLpgSQL_stmt_forc", "PLpgSQL_stmt_dynfors":
 			// FOR loops
-			if stmtMap, ok := value.(map[string]interface{}); ok {
-				if body, ok := stmtMap["body"].([]interface{}); ok {
+			if stmtMap, ok := value.(map[string]any); ok {
+				if body, ok := stmtMap["body"].([]any); ok {
 					for _, stmt := range body {
-						if s, ok := stmt.(map[string]interface{}); ok {
+						if s, ok := stmt.(map[string]any); ok {
 							lines = append(lines, walkPlpgsqlNode(s)...)
 						}
 					}
@@ -340,7 +341,7 @@ func walkPlpgsqlNode(node map[string]interface{}) []int {
 
 		case "PLpgSQL_stmt_exit":
 			// EXIT statement
-			if stmtMap, ok := value.(map[string]interface{}); ok {
+			if stmtMap, ok := value.(map[string]any); ok {
 				if lineno, ok := stmtMap["lineno"].(float64); ok {
 					lines = append(lines, int(lineno))
 				}
@@ -348,7 +349,7 @@ func walkPlpgsqlNode(node map[string]interface{}) []int {
 
 		case "PLpgSQL_stmt_raise":
 			// RAISE statement
-			if stmtMap, ok := value.(map[string]interface{}); ok {
+			if stmtMap, ok := value.(map[string]any); ok {
 				if lineno, ok := stmtMap["lineno"].(float64); ok {
 					lines = append(lines, int(lineno))
 				}
@@ -356,7 +357,7 @@ func walkPlpgsqlNode(node map[string]interface{}) []int {
 
 		case "PLpgSQL_stmt_execsql":
 			// Execute SQL statement
-			if stmtMap, ok := value.(map[string]interface{}); ok {
+			if stmtMap, ok := value.(map[string]any); ok {
 				if lineno, ok := stmtMap["lineno"].(float64); ok {
 					lines = append(lines, int(lineno))
 				}
@@ -364,7 +365,7 @@ func walkPlpgsqlNode(node map[string]interface{}) []int {
 
 		case "PLpgSQL_stmt_perform":
 			// PERFORM statement
-			if stmtMap, ok := value.(map[string]interface{}); ok {
+			if stmtMap, ok := value.(map[string]any); ok {
 				if lineno, ok := stmtMap["lineno"].(float64); ok {
 					lines = append(lines, int(lineno))
 				}
@@ -444,13 +445,18 @@ func injectNotifyAtLines(stmt *parser.Statement, filePath string, executableLine
 		// Check if this line should be instrumented
 		if absoluteLines[currentLine] {
 			// Create coverage point
+			// Calculate byte position for this line within the statement, then add statement offset
+			relativeBytePos := calculateBytePosition(lines, i)
+			absoluteBytePos := stmt.StartPos + relativeBytePos
+			lineLength := len(line)
 			cp := CoveragePoint{
 				File:             filePath,
-				Line:             currentLine,
+				StartPos:         absoluteBytePos,
+				Length:           lineLength,
 				Branch:           "",
 				ImplicitCoverage: false,
 			}
-			cp.SignalID = FormatSignalID(cp.File, cp.Line, cp.Branch)
+			cp.SignalID = FormatSignalID(cp.File, cp.StartPos, cp.Length, cp.Branch)
 			locations = append(locations, cp)
 
 			// Inject NOTIFY before the line
@@ -476,15 +482,37 @@ func getIndentation(line string) string {
 	return line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 }
 
+// calculateByteOffset calculates the byte offset of a line range within lines
+func calculateByteOffset(lines []string, lineOffset int) int {
+	byteOffset := 0
+	for i := 0; i < lineOffset && i < len(lines); i++ {
+		byteOffset += len(lines[i]) + 1 // +1 for newline character
+	}
+	return byteOffset
+}
+
+// calculateBytePosition calculates the byte offset of a line within a slice of lines
+func calculateBytePosition(lines []string, lineIndex int) int {
+	bytePos := 0
+	for i := 0; i < lineIndex && i < len(lines); i++ {
+		bytePos += len(lines[i]) + 1 // +1 for newline character
+	}
+	return bytePos
+}
+
 // instrumentSQLFunction instruments a SQL function
 func instrumentSQLFunction(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
-	// For SQL functions, we can't inject PERFORM, so we mark the function definition line
+	// For SQL functions, we can't inject PERFORM, so we mark the function definition
+	// Use the byte position from the parsed statement
+	bytePos := stmt.StartPos
+	stmtLength := len(stmt.RawSQL)
 	cp := CoveragePoint{
-		File:   filePath,
-		Line:   stmt.StartLine,
-		Branch: "",
+		File:     filePath,
+		StartPos: bytePos,
+		Length:   stmtLength,
+		Branch:   "",
 	}
-	cp.SignalID = FormatSignalID(cp.File, cp.Line, cp.Branch)
+	cp.SignalID = FormatSignalID(cp.File, cp.StartPos, cp.Length, cp.Branch)
 
 	// SQL functions are harder to instrument - for now, just track the function call
 	// This would require wrapping the SQL expression which is complex
@@ -496,18 +524,20 @@ func instrumentSQLFunction(stmt *parser.Statement, filePath string) (string, []C
 func markStatementLinesAsCovered(stmt *parser.Statement, filePath string) []CoveragePoint {
 	var locations []CoveragePoint
 
-	// For DDL/DML statements, mark the primary line(s) as implicitly covered
-	// We use the statement's line range from the AST
-	for line := stmt.StartLine; line <= stmt.EndLine; line++ {
-		cp := CoveragePoint{
-			File:             filePath,
-			Line:             line,
-			Branch:           "",
-			ImplicitCoverage: true, // DDL/DML are implicitly covered on successful execution
-		}
-		cp.SignalID = FormatSignalID(cp.File, cp.Line, cp.Branch)
-		locations = append(locations, cp)
+	// For DDL/DML statements, mark the entire statement as implicitly covered
+	// Use the byte position from the parsed statement
+	bytePos := stmt.StartPos
+	stmtLength := len(stmt.RawSQL)
+
+	cp := CoveragePoint{
+		File:             filePath,
+		StartPos:         bytePos,
+		Length:           stmtLength,
+		Branch:           "",
+		ImplicitCoverage: true, // DDL/DML are implicitly covered on successful execution
 	}
+	cp.SignalID = FormatSignalID(cp.File, cp.StartPos, cp.Length, cp.Branch)
+	locations = append(locations, cp)
 
 	return locations
 }

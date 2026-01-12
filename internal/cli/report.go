@@ -73,21 +73,21 @@ func ReportSummary(coverageFile string) error {
 	}
 
 	// Print overall coverage
-	fmt.Printf("Overall Coverage: %.2f%%\n\n", cov.TotalLineCoveragePercent())
+	fmt.Printf("Overall Coverage: %.2f%%\n\n", cov.TotalPositionCoveragePercent())
 
 	// Print per-file coverage
 	fmt.Println("File Coverage:")
-	for file, hits := range cov.Files {
+	for file, posHits := range cov.Positions {
 		covered := 0
-		for _, count := range hits {
+		for _, count := range posHits {
 			if count > 0 {
 				covered++
 			}
 		}
-		total := len(hits)
-		percent := cov.LineCoveragePercent(file)
+		total := len(posHits)
+		percent := cov.PositionCoveragePercent(file)
 
-		fmt.Printf("  %s: %.2f%% (%d/%d lines)\n", file, percent, covered, total)
+		fmt.Printf("  %s: %.2f%% (%d/%d positions)\n", file, percent, covered, total)
 	}
 
 	return nil

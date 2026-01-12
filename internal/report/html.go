@@ -1,7 +1,6 @@
 package report
 
 import (
-	"bufio"
 	"fmt"
 	"html"
 	"io"
@@ -21,11 +20,18 @@ func NewHTMLReporter() *HTMLReporter {
 	return &HTMLReporter{}
 }
 
+// positionRange represents a byte range with coverage info
+type positionRange struct {
+	startPos int
+	length   int
+	hitCount int
+}
+
 // Format formats coverage data as HTML and writes to the writer
 func (r *HTMLReporter) Format(cov *coverage.Coverage, writer io.Writer) error {
 	// Sort files for deterministic output
 	var files []string
-	for file := range cov.Files {
+	for file := range cov.Positions {
 		files = append(files, file)
 	}
 	sort.Strings(files)
@@ -52,8 +58,7 @@ func (r *HTMLReporter) Format(cov *coverage.Coverage, writer io.Writer) error {
 
 // writeHeader writes the HTML document header with CSS
 func (r *HTMLReporter) writeHeader(cov *coverage.Coverage, files []string, writer io.Writer) error {
-	_, err := fmt.Fprintf(writer, `
-<!DOCTYPE html>
+	_, err := fmt.Fprintf(writer, `<!DOCTYPE html>
 <html>
 	<head>
 		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
@@ -91,17 +96,16 @@ func (r *HTMLReporter) writeHeader(cov *coverage.Coverage, files []string, write
 				margin: 0 5px;
 			}
 			.cov0 { color: rgb(192, 0, 0) }
-.cov1 { color: rgb(128, 128, 128) }
-.cov2 { color: rgb(116, 140, 131) }
-.cov3 { color: rgb(104, 152, 134) }
-.cov4 { color: rgb(92, 164, 137) }
-.cov5 { color: rgb(80, 176, 140) }
-.cov6 { color: rgb(68, 188, 143) }
-.cov7 { color: rgb(56, 200, 146) }
-.cov8 { color: rgb(44, 212, 149) }
-.cov9 { color: rgb(32, 224, 152) }
-.cov10 { color: rgb(20, 236, 155) }
-
+			.cov1 { color: rgb(128, 128, 128) }
+			.cov2 { color: rgb(116, 140, 131) }
+			.cov3 { color: rgb(104, 152, 134) }
+			.cov4 { color: rgb(92, 164, 137) }
+			.cov5 { color: rgb(80, 176, 140) }
+			.cov6 { color: rgb(68, 188, 143) }
+			.cov7 { color: rgb(56, 200, 146) }
+			.cov8 { color: rgb(44, 212, 149) }
+			.cov9 { color: rgb(32, 224, 152) }
+			.cov10 { color: rgb(20, 236, 155) }
 		</style>
 	</head>
 	<body>
@@ -115,7 +119,7 @@ func (r *HTMLReporter) writeHeader(cov *coverage.Coverage, files []string, write
 
 	// Write file options with coverage percentages
 	for i, file := range files {
-		percent := cov.LineCoveragePercent(file)
+		percent := cov.PositionCoveragePercent(file)
 		_, err = fmt.Fprintf(writer, `				<option value="file%d">%s (%.1f%%%%)</option>
 `, i, html.EscapeString(file), percent)
 		if err != nil {
@@ -128,10 +132,8 @@ func (r *HTMLReporter) writeHeader(cov *coverage.Coverage, files []string, write
 			</div>
 			<div id="legend">
 				<span>not tracked</span>
-			
 				<span class="cov0">not covered</span>
 				<span class="cov8">covered</span>
-			
 			</div>
 		</div>
 		<div id="content">
@@ -141,7 +143,7 @@ func (r *HTMLReporter) writeHeader(cov *coverage.Coverage, files []string, write
 
 // writeFileDetailWithSource writes detailed coverage for a single file with actual source code
 func (r *HTMLReporter) writeFileDetailWithSource(file string, cov *coverage.Coverage, writer io.Writer, fileIndex int) error {
-	hits := cov.Files[file]
+	posHits := cov.Positions[file]
 
 	// Write file pre tag with ID and hidden by default
 	displayStyle := "display: none"
@@ -154,42 +156,22 @@ func (r *HTMLReporter) writeFileDetailWithSource(file string, cov *coverage.Cove
 		return err
 	}
 
-	// Read the source file
-	sourceLines, err := r.readSourceFile(file)
+	// Read the source file from disk
+	sourceText, err := r.readSourceFileAsString(file)
 	if err != nil {
 		// If we can't read the file, show error
-		_, err = fmt.Fprintf(writer, `package main
-
-// Error reading source file: %s
+		_, err = fmt.Fprintf(writer, `// Error reading source file: %s
 `, html.EscapeString(err.Error()))
 		if err != nil {
 			return err
 		}
 	} else {
-		// Show actual source code with coverage coloring
-		for lineNum := 1; lineNum <= len(sourceLines); lineNum++ {
-			lineContent := sourceLines[lineNum]
-			hitCount, hasCoverage := hits[lineNum]
+		// Parse position hits into ranges sorted by position
+		ranges := r.parsePositionRanges(posHits)
 
-			if hasCoverage {
-				// Escape HTML and apply coverage coloring
-				escapedContent := html.EscapeString(lineContent)
-				covClass := r.getCoverageClass(hitCount)
-
-				// Write the span with newline at end
-				_, err = fmt.Fprintf(writer, `<span class="%s" title="%d">%s</span>
-`, covClass, hitCount, escapedContent)
-				if err != nil {
-					return err
-				}
-			} else {
-				// No coverage for this line - just output as is with newline
-				escapedContent := html.EscapeString(lineContent)
-				_, err = fmt.Fprintf(writer, "%s\n", escapedContent)
-				if err != nil {
-					return err
-				}
-			}
+		// Render source with position-based highlighting
+		if err := r.renderSourceWithPositions(sourceText, ranges, writer); err != nil {
+			return err
 		}
 	}
 
@@ -198,35 +180,145 @@ func (r *HTMLReporter) writeFileDetailWithSource(file string, cov *coverage.Cove
 	return err
 }
 
-// readSourceFile reads a source file and returns a map of line numbers to content
-func (r *HTMLReporter) readSourceFile(filePath string) (map[int]string, error) {
+// parsePositionRanges converts position hits map to sorted, non-overlapping ranges
+func (r *HTMLReporter) parsePositionRanges(posHits coverage.PositionHits) []positionRange {
+	var ranges []positionRange
+
+	for posKey, hitCount := range posHits {
+		startPos, length, err := coverage.ParsePositionKey(posKey)
+		if err != nil {
+			continue
+		}
+		ranges = append(ranges, positionRange{
+			startPos: startPos,
+			length:   length,
+			hitCount: hitCount,
+		})
+	}
+
+	// Sort by start position
+	sort.Slice(ranges, func(i, j int) bool {
+		return ranges[i].startPos < ranges[j].startPos
+	})
+
+	// Merge overlapping ranges - keep only non-overlapping portions
+	// When ranges overlap, prefer the one that starts first
+	return r.resolveOverlappingRanges(ranges)
+}
+
+// resolveOverlappingRanges removes overlapping portions from ranges
+// Each byte is assigned to only one range (the one that starts first)
+func (r *HTMLReporter) resolveOverlappingRanges(ranges []positionRange) []positionRange {
+	if len(ranges) == 0 {
+		return ranges
+	}
+
+	var result []positionRange
+	currentEnd := 0
+
+	for _, rng := range ranges {
+		// Skip ranges that are completely inside already-covered regions
+		if rng.startPos+rng.length <= currentEnd {
+			continue
+		}
+
+		// Adjust start if it overlaps with previous coverage
+		adjustedStart := rng.startPos
+		if adjustedStart < currentEnd {
+			adjustedStart = currentEnd
+		}
+
+		// Calculate adjusted length
+		adjustedLength := rng.startPos + rng.length - adjustedStart
+		if adjustedLength > 0 {
+			result = append(result, positionRange{
+				startPos: adjustedStart,
+				length:   adjustedLength,
+				hitCount: rng.hitCount,
+			})
+			currentEnd = adjustedStart + adjustedLength
+		}
+	}
+
+	return result
+}
+
+// renderSourceWithPositions renders source text with position-based coverage spans
+func (r *HTMLReporter) renderSourceWithPositions(sourceText string, ranges []positionRange, writer io.Writer) error {
+	// Convert source to bytes for position-based access
+	sourceBytes := []byte(sourceText)
+	sourceLen := len(sourceBytes)
+
+	// Filter out any ranges that exceed the source length
+	var validRanges []positionRange
+	for _, rng := range ranges {
+		if rng.startPos < sourceLen {
+			validRanges = append(validRanges, rng)
+		}
+	}
+	ranges = validRanges
+
+	// Current position in source
+	pos := 0
+	rangeIdx := 0
+
+	for pos < sourceLen {
+		// Find next coverage range
+		if rangeIdx < len(ranges) {
+			rng := ranges[rangeIdx]
+
+			if pos < rng.startPos {
+				// Output uncovered text before range
+				endPos := min(rng.startPos, sourceLen)
+				uncoveredText := string(sourceBytes[pos:endPos])
+				_, err := writer.Write([]byte(html.EscapeString(uncoveredText)))
+				if err != nil {
+					return err
+				}
+				pos = endPos
+			} else {
+				// We're at the start of a coverage range - output with span
+				endPos := min(rng.startPos+rng.length, sourceLen)
+				coveredText := string(sourceBytes[pos:endPos])
+				covClass := r.getCoverageClass(rng.hitCount)
+
+				_, err := fmt.Fprintf(writer, `<span class="%s" title="%d">%s</span>`,
+					covClass, rng.hitCount, html.EscapeString(coveredText))
+				if err != nil {
+					return err
+				}
+				pos = endPos
+				rangeIdx++
+			}
+		} else {
+			// No more coverage ranges, output rest of file
+			remainingText := string(sourceBytes[pos:])
+			_, err := writer.Write([]byte(html.EscapeString(remainingText)))
+			if err != nil {
+				return err
+			}
+			break
+		}
+	}
+
+	return nil
+}
+
+// readSourceFileAsString reads a source file and returns its content as string
+func (r *HTMLReporter) readSourceFileAsString(filePath string) (string, error) {
 	// Try to open the file - handle both absolute and relative paths
-	file, err := os.Open(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		// Try with current working directory
 		cwd, _ := os.Getwd()
 		altPath := filepath.Join(cwd, filePath)
-		file, err = os.Open(altPath)
+		data, err = os.ReadFile(altPath)
 		if err != nil {
-			return nil, fmt.Errorf("cannot open file: %w", err)
+			return "", fmt.Errorf("cannot open file: %w", err)
 		}
 	}
-	defer file.Close()
 
-	lines := make(map[int]string)
-	scanner := bufio.NewScanner(file)
-	lineNum := 1
-
-	for scanner.Scan() {
-		lines[lineNum] = scanner.Text()
-		lineNum++
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading file: %w", err)
-	}
-
-	return lines, nil
+	return string(data), nil
 }
 
 // getCoverageClass returns the CSS class for coverage styling
@@ -234,11 +326,7 @@ func (r *HTMLReporter) getCoverageClass(hitCount int) string {
 	if hitCount == 0 {
 		return "cov0"
 	}
-	// Use cov1-cov10 for different hit counts (like go tool cover)
-	if hitCount > 10 {
-		return "cov10"
-	}
-	return fmt.Sprintf("cov%d", hitCount)
+	return "cov10" // Fully covered, TODO: implement gradient if needed
 }
 
 // writeFooter writes the HTML document footer with JavaScript

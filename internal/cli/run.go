@@ -98,6 +98,7 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 
 	// Step 7: Collect coverage
 	collector := coverage.NewCollector()
+
 	if err := collector.CollectFromRuns(testRuns); err != nil {
 		return 1, fmt.Errorf("coverage collection failed: %w", err)
 	}
@@ -125,7 +126,7 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 }
 
 // PrintVerbose prints a message if verbose mode is enabled
-func PrintVerbose(config *Config, format string, args ...interface{}) {
+func PrintVerbose(config *Config, format string, args ...any) {
 	if config.Verbose {
 		fmt.Printf(format+"\n", args...)
 	}
