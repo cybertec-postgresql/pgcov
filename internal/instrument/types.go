@@ -1,8 +1,6 @@
 package instrument
 
 import (
-	"fmt"
-
 	"github.com/cybertec-postgresql/pgcov/internal/parser"
 )
 
@@ -21,13 +19,4 @@ type CoveragePoint struct {
 	Branch           string // Branch identifier (optional, e.g., "if_true", "if_false")
 	SignalID         string // Unique signal identifier sent via NOTIFY
 	ImplicitCoverage bool   // True if covered by successful execution (DDL/DML), false if needs NOTIFY
-}
-
-// FormatSignalID generates a signal ID for a coverage point
-// Format: {file}:{startPos}:{length} or {file}:{startPos}:{length}:{branch}
-func (cp *CoveragePoint) FormatSignalID() string {
-	if cp.Branch == "" {
-		return fmt.Sprintf("%s:%d:%d", cp.File, cp.StartPos, cp.Length)
-	}
-	return fmt.Sprintf("%s:%d:%d:%s", cp.File, cp.StartPos, cp.Length, cp.Branch)
 }

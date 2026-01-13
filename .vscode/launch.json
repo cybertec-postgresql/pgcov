@@ -39,7 +39,9 @@
             "mode": "test",
             "program": "${fileDirname}",
             "env": {
-                "CGO_ENABLED": "1"
+                "CGO_ENABLED": "1",
+                "CC": "C:\\msys64\\mingw64\\bin\\gcc.exe",
+                "PATH": "${env:PATH};C:\\msys64\\mingw64\\bin"
             },
             "showLog": false
         },
@@ -50,7 +52,9 @@
             "mode": "test",
             "program": "${fileDirname}",
             "env": {
-                "CGO_ENABLED": "1"
+                "CGO_ENABLED": "1",
+                "CC": "C:\\msys64\\mingw64\\bin\\gcc.exe",
+                "PATH": "${env:PATH};C:\\msys64\\mingw64\\bin"
             },
             "args": [
                 "-test.run",
@@ -65,7 +69,9 @@
             "mode": "test",
             "program": "${workspaceFolder}/internal",
             "env": {
-                "CGO_ENABLED": "1"
+                "CGO_ENABLED": "1",
+                "CC": "C:\\msys64\\mingw64\\bin\\gcc.exe",
+                "PATH": "${env:PATH};C:\\msys64\\mingw64\\bin"
             },
             "args": [
                 "-test.v",
@@ -75,6 +81,51 @@
                 "5m"
             ],
             "showLog": false
+        },
+        {
+            "name": "Debug Current Test Function",
+            "type": "go",
+            "request": "launch", 
+            "mode": "test",
+            "program": "${fileDirname}",
+            "env": {
+                "CGO_ENABLED": "1",
+                "CC": "C:\\msys64\\mingw64\\bin\\gcc.exe",
+                "PATH": "${env:PATH};C:\\msys64\\mingw64\\bin"
+            },
+            "args": [
+                "-test.run",
+                "^${input:testName}$",
+                "-test.v"
+            ],
+            "showLog": true,
+            "buildFlags": "-gcflags='all=-N -l'"
+        },
+        {
+            "name": "Debug Test at Cursor",
+            "type": "go",
+            "request": "launch",
+            "mode": "test",
+            "program": "${fileDirname}",
+            "env": {
+                "CGO_ENABLED": "1",
+                "CC": "C:\\msys64\\mingw64\\bin\\gcc.exe",
+                "PATH": "${env:PATH};C:\\msys64\\mingw64\\bin"
+            },
+            "args": [
+                "-test.run",
+                "${command:go.test.cursor}"
+            ],
+            "showLog": false,
+            "buildFlags": "-gcflags='all=-N -l'"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "testName",
+            "description": "Test function name",
+            "default": "TestInstrumentWithLexer",
+            "type": "promptString"
         }
     ]
 }

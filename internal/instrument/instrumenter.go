@@ -1,7 +1,6 @@
 package instrument
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -76,7 +75,7 @@ func instrumentStatement(stmt *parser.Statement, filePath string) (string, []Cov
 
 		switch funcLang {
 		case "plpgsql":
-			instrumented, locs := instrumentPlpgsqlFunction(stmt, filePath)
+			instrumented, locs := instrumentWithLexer(stmt, filePath)
 			return instrumented, locs
 		case "sql":
 			instrumented, locs := instrumentSQLFunction(stmt, filePath)
@@ -90,7 +89,7 @@ func instrumentStatement(stmt *parser.Statement, filePath string) (string, []Cov
 
 	// For DO blocks, check if they're PL/pgSQL
 	if isDOBlock(stmt) {
-		instrumented, locs := instrumentPlpgsqlFunction(stmt, filePath)
+		instrumented, locs := instrumentWithLexer(stmt, filePath)
 		return instrumented, locs
 	}
 
@@ -108,15 +107,13 @@ func getFunctionLanguage(stmt *parser.Statement) string {
 		return ""
 	}
 
-	if createFunc, ok := stmt.Node.Node.(*pgquery.Node_CreateFunctionStmt); ok {
-		if createFunc.CreateFunctionStmt != nil {
-			// Look for the LANGUAGE option in the function definition
-			for _, opt := range createFunc.CreateFunctionStmt.Options {
-				if opt.GetDefElem() != nil && opt.GetDefElem().Defname == "language" {
-					if langNode := opt.GetDefElem().Arg; langNode != nil {
-						if strNode := langNode.GetString_(); strNode != nil {
-							return strings.ToLower(strNode.Sval)
-						}
+	if createFunc := stmt.Node.GetCreateFunctionStmt(); createFunc != nil {
+		// Look for the LANGUAGE option in the function definition
+		for _, opt := range createFunc.Options {
+			if opt.GetDefElem() != nil && opt.GetDefElem().Defname == "language" {
+				if langNode := opt.GetDefElem().Arg; langNode != nil {
+					if strNode := langNode.GetString_(); strNode != nil {
+						return strings.ToLower(strNode.Sval)
 					}
 				}
 			}
@@ -128,287 +125,191 @@ func getFunctionLanguage(stmt *parser.Statement) string {
 
 // isDOBlock checks if the statement is a DO block using the AST node
 func isDOBlock(stmt *parser.Statement) bool {
+	return stmt.Node != nil && stmt.Node.GetDoStmt() != nil
+}
+
+func instrumentWithLexer(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
 	if stmt.Node == nil {
+		return stmt.RawSQL, nil
+	}
+
+	// Extract function body from the parsed AST node
+	var functionBodyText string
+
+	switch node := stmt.Node.Node; node.(type) {
+	case *pgquery.Node_CreateFunctionStmt:
+		// Get the function body from the "as" option
+		createFunc := stmt.Node.GetCreateFunctionStmt()
+		for _, opt := range createFunc.Options {
+			if defElem := opt.GetDefElem(); defElem != nil && defElem.Defname == "as" {
+				if defElem.Arg != nil {
+					if strList := defElem.Arg.GetList(); strList != nil && len(strList.Items) > 0 {
+						if strNode := strList.Items[0].GetString_(); strNode != nil {
+							functionBodyText = strNode.Sval
+							break
+						}
+					} else if strNode := defElem.Arg.GetString_(); strNode != nil {
+						functionBodyText = strNode.Sval
+						break
+					}
+				}
+			}
+		}
+
+	case *pgquery.Node_DoStmt:
+		// For DO blocks
+		if doStmt := stmt.Node.GetDoStmt(); len(doStmt.Args) > 0 {
+			if strNode := doStmt.Args[0].GetString_(); strNode != nil {
+				functionBodyText = strNode.Sval
+			}
+		}
+
+	default:
+		return stmt.RawSQL, nil
+	}
+
+	// Scan the function body content with lexer
+	ScanRes, err := pgquery.Scan(functionBodyText)
+	if err != nil {
+		// Return original on scan error
+		return stmt.RawSQL, nil
+	}
+
+	tokens := ScanRes.GetTokens()
+	if len(tokens) == 0 {
+		return stmt.RawSQL, nil
+	}
+
+	// Find executable statement boundaries in the body content
+	executableSegments := findExecutableSegments(functionBodyText, tokens)
+	if len(executableSegments) == 0 {
+		return stmt.RawSQL, nil
+	}
+
+	// Create coverage points and inject PERFORM calls
+	return instrumentFunctionBodyFromAST(stmt, filePath, functionBodyText, executableSegments)
+}
+
+type executableSegment struct {
+	startPos  int // Position in body content
+	endPos    int // Position in body content
+	lineStart int // Line number in body content (0-based)
+	lineEnd   int // Line number in body content (0-based)
+}
+
+// findExecutableSegments finds executable statement segments in function body
+func findExecutableSegments(bodyContent string, tokens []*pgquery.ScanToken) []executableSegment {
+	var segments []executableSegment
+
+	segmentStart := 0
+	hasExecutableContent := false
+
+	for idx, token := range tokens {
+		if token.Token == pgquery.Token_BEGIN_P { // Skip until BEGIN token
+			tokens = tokens[idx+1:]
+			segmentStart = int(token.End)
+			break
+		}
+	}
+
+	for _, token := range tokens {
+		// Skip comment tokens
+		if isCommentToken(int32(token.Token)) {
+			continue
+		}
+
+		// Check if this is a semicolon (statement separator)
+		if token.Token == pgquery.Token_ASCII_59 { // Token_ASCII_59 - ";"
+			if hasExecutableContent {
+				// Check if this segment represents an executable statement
+				segmentEnd := int(token.Start)
+				segmentContent := bodyContent[segmentStart:segmentEnd]
+
+				if isExecutableSegment(segmentContent) {
+					segment := executableSegment{
+						startPos:  segmentStart,
+						endPos:    segmentEnd,
+						lineStart: convertByteOffsetToLine(bodyContent, segmentStart),
+						lineEnd:   convertByteOffsetToLine(bodyContent, segmentEnd),
+					}
+					segments = append(segments, segment)
+				}
+			}
+
+			// Reset for next segment
+			segmentStart = int(token.End)
+			hasExecutableContent = false
+		} else {
+			// This is some non-comment token, so we have content
+			hasExecutableContent = true
+		}
+	}
+
+	// Handle the last segment if there's remaining content
+	if hasExecutableContent && segmentStart < len(bodyContent) {
+		segmentContent := bodyContent[segmentStart:]
+		if isExecutableSegment(segmentContent) {
+			segment := executableSegment{
+				startPos:  segmentStart,
+				endPos:    len(bodyContent),
+				lineStart: convertByteOffsetToLine(bodyContent, segmentStart),
+				lineEnd:   convertByteOffsetToLine(bodyContent, len(bodyContent)),
+			}
+			segments = append(segments, segment)
+		}
+	}
+
+	return segments
+}
+
+// isExecutableSegment determines if a segment represents an executable statement
+func isExecutableSegment(segmentContent string) bool {
+	trimmedSegment := strings.TrimSpace(segmentContent)
+	if trimmedSegment == "" {
 		return false
 	}
 
-	if _, ok := stmt.Node.Node.(*pgquery.Node_DoStmt); ok {
+	// Convert to uppercase for easier matching
+	upper := strings.ToUpper(trimmedSegment)
+
+	// Skip pure structural statements (only if they don't contain other executable content)
+	if upper == "BEGIN" || upper == "END" {
+		return false
+	}
+
+	// Include assignment statements (contain :=)
+	if strings.Contains(segmentContent, ":=") {
+		return true
+	}
+
+	// Include RETURN statements
+	if strings.HasPrefix(upper, "RETURN") || strings.Contains(upper, "\nRETURN ") || strings.Contains(upper, " RETURN ") {
+		return true
+	}
+
+	// Include RAISE statements
+	if strings.HasPrefix(upper, "RAISE") || strings.Contains(upper, "\nRAISE ") || strings.Contains(upper, " RAISE ") {
+		return true
+	}
+
+	// Include PERFORM statements
+	if strings.HasPrefix(upper, "PERFORM") || strings.Contains(upper, "\nPERFORM ") || strings.Contains(upper, " PERFORM ") {
+		return true
+	}
+
+	// Include SQL statements (SELECT, INSERT, UPDATE, DELETE, etc.)
+	if strings.HasPrefix(upper, "SELECT") || strings.Contains(upper, "\nSELECT ") || strings.Contains(upper, " SELECT ") ||
+		strings.HasPrefix(upper, "INSERT") || strings.Contains(upper, "\nINSERT ") || strings.Contains(upper, " INSERT ") ||
+		strings.HasPrefix(upper, "UPDATE") || strings.Contains(upper, "\nUPDATE ") || strings.Contains(upper, " UPDATE ") ||
+		strings.HasPrefix(upper, "DELETE") || strings.Contains(upper, "\nDELETE ") || strings.Contains(upper, " DELETE ") {
 		return true
 	}
 
 	return false
 }
 
-// instrumentPlpgsqlFunction instruments a PL/pgSQL function with line-by-line coverage
-// Uses pg_query.ParsePlPgSqlToJSON to properly parse the PL/pgSQL AST
-func instrumentPlpgsqlFunction(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
-	lines := strings.Split(stmt.RawSQL, "\n")
-
-	// Trim leading comments and empty lines from stmt.RawSQL to ensure PL/pgSQL parser line numbers match
-	// We need to find the line that starts with CREATE FUNCTION/PROCEDURE or DO
-	firstNonEmptyIndex := 0
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		// Look for CREATE FUNCTION, CREATE PROCEDURE, or DO
-		if strings.HasPrefix(strings.ToUpper(trimmed), "CREATE") ||
-			strings.HasPrefix(strings.ToUpper(trimmed), "DO") {
-			firstNonEmptyIndex = i
-			break
-		}
-		// If not found yet, at least skip empty lines
-		if trimmed != "" && firstNonEmptyIndex == 0 {
-			firstNonEmptyIndex = i
-		}
-	}
-
-	trimmedSQL := strings.Join(lines[firstNonEmptyIndex:], "\n")
-	lineOffset := firstNonEmptyIndex
-
-	// Parse the PL/pgSQL function using the proper parser
-	jsonResult, err := pgquery.ParsePlPgSqlToJSON(trimmedSQL)
-	if err != nil {
-		// Return empty instrumentation for malformed SQL
-		return stmt.RawSQL, nil
-	}
-
-	// Parse the JSON result to extract statement line numbers
-	var plpgsqlAST []map[string]any
-	if err := json.Unmarshal([]byte(jsonResult), &plpgsqlAST); err != nil {
-		// Return empty instrumentation for invalid AST
-		return stmt.RawSQL, nil
-	}
-
-	// Extract executable line numbers from the AST
-	executableLines := extractExecutableLines(plpgsqlAST)
-
-	// If no executable lines found, return without instrumentation
-	if len(executableLines) == 0 {
-		return stmt.RawSQL, nil
-	}
-
-	// Find the function body offset using the AST structure (using trimmed SQL)
-	trimmedStmt := &parser.Statement{
-		RawSQL:    trimmedSQL,
-		StartPos:  stmt.StartPos + calculateByteOffset(lines, lineOffset), // Absolute position
-		StartLine: stmt.StartLine + lineOffset,
-		EndLine:   stmt.EndLine,
-		Type:      stmt.Type,
-		Node:      stmt.Node,
-	}
-	bodyOffset := findFunctionBodyOffset(trimmedStmt)
-	if bodyOffset < 0 {
-		// Could not determine body offset, return without instrumentation
-		return stmt.RawSQL, nil
-	}
-
-	// Now instrument the function by injecting PERFORM pg_notify at each executable line
-	instrumentedTrimmed, locations := injectNotifyAtLines(trimmedStmt, filePath, executableLines)
-
-	// Reconstruct full SQL with leading lines
-	if lineOffset > 0 {
-		result := strings.Join(lines[:lineOffset], "\n") + "\n" + instrumentedTrimmed
-		return result, locations
-	}
-
-	return instrumentedTrimmed, locations
-}
-
-// extractExecutableLines walks the PL/pgSQL AST and extracts line numbers of executable statements
-func extractExecutableLines(ast []map[string]any) []int {
-	var lines []int
-
-	for _, node := range ast {
-		lines = append(lines, walkPlpgsqlNode(node)...)
-	}
-
-	return lines
-}
-
-// walkPlpgsqlNode recursively walks a PL/pgSQL AST node and extracts executable line numbers
-func walkPlpgsqlNode(node map[string]any) []int {
-	var lines []int
-
-	for key, value := range node {
-		switch key {
-		case "PLpgSQL_function":
-			// Walk the function action (body)
-			if funcMap, ok := value.(map[string]any); ok {
-				if action, ok := funcMap["action"].(map[string]any); ok {
-					lines = append(lines, walkPlpgsqlNode(action)...)
-				}
-			}
-
-		case "PLpgSQL_stmt_block":
-			// Walk block body
-			if blockMap, ok := value.(map[string]any); ok {
-				if body, ok := blockMap["body"].([]any); ok {
-					for _, stmt := range body {
-						if stmtMap, ok := stmt.(map[string]any); ok {
-							lines = append(lines, walkPlpgsqlNode(stmtMap)...)
-						}
-					}
-				}
-			}
-
-		case "PLpgSQL_stmt_assign":
-			// Assignment statement - executable
-			if stmtMap, ok := value.(map[string]any); ok {
-				if lineno, ok := stmtMap["lineno"].(float64); ok {
-					lines = append(lines, int(lineno))
-				}
-			}
-
-		case "PLpgSQL_stmt_return":
-			// Return statement - executable
-			if stmtMap, ok := value.(map[string]any); ok {
-				if lineno, ok := stmtMap["lineno"].(float64); ok {
-					lines = append(lines, int(lineno))
-				}
-			}
-
-		case "PLpgSQL_stmt_if":
-			// IF statement - walk branches
-			if stmtMap, ok := value.(map[string]any); ok {
-				// Walk then_body
-				if thenBody, ok := stmtMap["then_body"].([]any); ok {
-					for _, stmt := range thenBody {
-						if s, ok := stmt.(map[string]any); ok {
-							lines = append(lines, walkPlpgsqlNode(s)...)
-						}
-					}
-				}
-				// Walk elsif_list
-				if elsifList, ok := stmtMap["elsif_list"].([]any); ok {
-					for _, elsif := range elsifList {
-						if elsifMap, ok := elsif.(map[string]any); ok {
-							if elsifStmt, ok := elsifMap["PLpgSQL_if_elsif"].(map[string]any); ok {
-								if stmts, ok := elsifStmt["stmts"].([]any); ok {
-									for _, stmt := range stmts {
-										if s, ok := stmt.(map[string]any); ok {
-											lines = append(lines, walkPlpgsqlNode(s)...)
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-				// Walk else_body
-				if elseBody, ok := stmtMap["else_body"].([]any); ok {
-					for _, stmt := range elseBody {
-						if s, ok := stmt.(map[string]any); ok {
-							lines = append(lines, walkPlpgsqlNode(s)...)
-						}
-					}
-				}
-			}
-
-		case "PLpgSQL_stmt_loop":
-			// Loop statement
-			if stmtMap, ok := value.(map[string]any); ok {
-				if body, ok := stmtMap["body"].([]any); ok {
-					for _, stmt := range body {
-						if s, ok := stmt.(map[string]any); ok {
-							lines = append(lines, walkPlpgsqlNode(s)...)
-						}
-					}
-				}
-			}
-
-		case "PLpgSQL_stmt_while":
-			// While loop
-			if stmtMap, ok := value.(map[string]any); ok {
-				if body, ok := stmtMap["body"].([]any); ok {
-					for _, stmt := range body {
-						if s, ok := stmt.(map[string]any); ok {
-							lines = append(lines, walkPlpgsqlNode(s)...)
-						}
-					}
-				}
-			}
-
-		case "PLpgSQL_stmt_fori", "PLpgSQL_stmt_fors", "PLpgSQL_stmt_forc", "PLpgSQL_stmt_dynfors":
-			// FOR loops
-			if stmtMap, ok := value.(map[string]any); ok {
-				if body, ok := stmtMap["body"].([]any); ok {
-					for _, stmt := range body {
-						if s, ok := stmt.(map[string]any); ok {
-							lines = append(lines, walkPlpgsqlNode(s)...)
-						}
-					}
-				}
-			}
-
-		case "PLpgSQL_stmt_exit":
-			// EXIT statement
-			if stmtMap, ok := value.(map[string]any); ok {
-				if lineno, ok := stmtMap["lineno"].(float64); ok {
-					lines = append(lines, int(lineno))
-				}
-			}
-
-		case "PLpgSQL_stmt_raise":
-			// RAISE statement
-			if stmtMap, ok := value.(map[string]any); ok {
-				if lineno, ok := stmtMap["lineno"].(float64); ok {
-					lines = append(lines, int(lineno))
-				}
-			}
-
-		case "PLpgSQL_stmt_execsql":
-			// Execute SQL statement
-			if stmtMap, ok := value.(map[string]any); ok {
-				if lineno, ok := stmtMap["lineno"].(float64); ok {
-					lines = append(lines, int(lineno))
-				}
-			}
-
-		case "PLpgSQL_stmt_perform":
-			// PERFORM statement
-			if stmtMap, ok := value.(map[string]any); ok {
-				if lineno, ok := stmtMap["lineno"].(float64); ok {
-					lines = append(lines, int(lineno))
-				}
-			}
-		}
-	}
-
-	return lines
-}
-
-// findFunctionBodyOffset determines the line offset where the function body starts
-// by using AST location information from CreateFunctionStmt
-// Returns the 0-based line index within stmt.RawSQL where the function body begins
-func findFunctionBodyOffset(stmt *parser.Statement) int {
-	if stmt.Node == nil {
-		return -1
-	}
-
-	// Extract location from CreateFunctionStmt
-	if createFunc, ok := stmt.Node.Node.(*pgquery.Node_CreateFunctionStmt); ok {
-		if createFunc.CreateFunctionStmt != nil {
-			// Find the "as" option which contains the function body location
-			for _, opt := range createFunc.CreateFunctionStmt.Options {
-				if defElem := opt.GetDefElem(); defElem != nil && defElem.Defname == "as" {
-					// The defElem.Location points to the start of "AS" keyword
-					// The body starts after AS and the delimiter ($$, $function$, etc.)
-					if defElem.Location > 0 {
-						// Convert byte offset to line number (relative to statement start)
-						lineOffset := calculateLineFromByteOffset(stmt.RawSQL, int(defElem.Location))
-						// The body typically starts on the next line after AS $$
-						// But we need to be more precise - the body starts after the newline following the delimiter
-						return lineOffset + 1
-					}
-				}
-			}
-		}
-	}
-
-	return -1
-}
-
-// calculateLineFromByteOffset converts a byte offset to a 0-based line index
-func calculateLineFromByteOffset(sql string, byteOffset int) int {
+// convertByteOffsetToLine converts a byte offset to a 0-based line index
+func convertByteOffsetToLine(sql string, byteOffset int) int {
 	lineIdx := 0
 	for i := 0; i < byteOffset && i < len(sql); i++ {
 		if sql[i] == '\n' {
@@ -418,86 +319,96 @@ func calculateLineFromByteOffset(sql string, byteOffset int) int {
 	return lineIdx
 }
 
-// injectNotifyAtLines injects PERFORM pg_notify calls at specified line numbers
-func injectNotifyAtLines(stmt *parser.Statement, filePath string, executableLines []int) (string, []CoveragePoint) {
+// instrumentFunctionBodyFromAST injects PERFORM calls using AST-extracted function body
+func instrumentFunctionBodyFromAST(stmt *parser.Statement, filePath string, bodyContent string, segments []executableSegment) (string, []CoveragePoint) {
 	var locations []CoveragePoint
 
-	// Split into lines
-	lines := strings.Split(stmt.RawSQL, "\n")
-	result := strings.Builder{}
-
-	// The line numbers from ParsePlPgSqlToJSON are 0-based indices relative to the trimmed SQL string
-	// To get file line numbers: PL/pgSQL line N (0-based) → stmt.RawSQL index N → file line (stmt.StartLine + N)
-
-	absoluteLines := make(map[int]bool)
-	for _, plpgsqlLine := range executableLines {
-		// plpgsqlLine is a 0-based index from PL/pgSQL parser
-		lineIndex := plpgsqlLine
-		if lineIndex >= 0 && lineIndex < len(lines) {
-			// Convert to absolute file line number (1-based)
-			absoluteLine := stmt.StartLine + lineIndex
-			absoluteLines[absoluteLine] = true
-		}
-	}
-
-	currentLine := stmt.StartLine
-	for i, line := range lines {
-		// Check if this line should be instrumented
-		if absoluteLines[currentLine] {
-			// Create coverage point
-			// Calculate byte position for this line within the statement, then add statement offset
-			relativeBytePos := calculateBytePosition(lines, i)
-			absoluteBytePos := stmt.StartPos + relativeBytePos
-			lineLength := len(line)
-			cp := CoveragePoint{
-				File:             filePath,
-				StartPos:         absoluteBytePos,
-				Length:           lineLength,
-				Branch:           "",
-				ImplicitCoverage: false,
+	// Find where the function body content actually starts in the original SQL
+	// Use the AST location if available, otherwise search for the body content
+	bodyIndexInOriginal := strings.Index(stmt.RawSQL, bodyContent)
+	if bodyIndexInOriginal == -1 {
+		// If we can't find the exact body content, try to find it with different whitespace
+		normalizedBody := strings.TrimSpace(bodyContent)
+		for i := 0; i < len(stmt.RawSQL)-len(normalizedBody); i++ {
+			if strings.TrimSpace(stmt.RawSQL[i:i+len(normalizedBody)]) == normalizedBody {
+				bodyIndexInOriginal = i
+				break
 			}
-			cp.SignalID = FormatSignalID(cp.File, cp.StartPos, cp.Length, cp.Branch)
-			locations = append(locations, cp)
-
-			// Inject NOTIFY before the line
-			indent := getIndentation(line)
-			notifyCall := fmt.Sprintf("%sPERFORM pg_notify('pgcov', '%s');\n",
-				indent, strings.ReplaceAll(cp.SignalID, "'", "''"))
-			result.WriteString(notifyCall)
 		}
-
-		// Write original line
-		result.WriteString(line)
-		if i < len(lines)-1 {
-			result.WriteString("\n")
-		}
-		currentLine++
 	}
 
-	return result.String(), locations
+	if bodyIndexInOriginal == -1 {
+		// Fallback: return original SQL if we can't find the body
+		return stmt.RawSQL, nil
+	}
+
+	// Build instrumented function body
+	instrumentedBody := strings.Builder{}
+	lastProcessedPos := 0
+
+	for _, segment := range segments {
+		// Write any content before this segment
+		if segment.startPos > lastProcessedPos {
+			instrumentedBody.WriteString(bodyContent[lastProcessedPos:segment.startPos])
+		}
+
+		// Get the segment content
+		segmentContent := bodyContent[segment.startPos:segment.endPos]
+		segmentLines := strings.Split(segmentContent, "\n")
+
+		// Create coverage point for this segment
+		// Convert body positions to absolute file positions
+		absoluteStartPos := stmt.StartPos + bodyIndexInOriginal + segment.startPos
+		cp := CoveragePoint{
+			File:             filePath,
+			StartPos:         absoluteStartPos,
+			Length:           len(segmentContent),
+			Branch:           "",
+			ImplicitCoverage: false,
+		}
+		cp.SignalID = FormatSignalID(cp.File, cp.StartPos, cp.Length, cp.Branch)
+		locations = append(locations, cp)
+
+		// Find the first non-empty line in segment to get proper indentation
+		indent := ""
+		for _, line := range segmentLines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed != "" {
+				indent = getIndentation(line)
+				break
+			}
+		}
+
+		// Inject PERFORM pg_notify call before the segment
+		notifyCall := fmt.Sprintf("%sPERFORM pg_notify('pgcov', '%s');\n",
+			indent, strings.ReplaceAll(cp.SignalID, "'", "''"))
+		instrumentedBody.WriteString(notifyCall)
+
+		// Write the original segment content
+		instrumentedBody.WriteString(segmentContent)
+
+		lastProcessedPos = segment.endPos
+	}
+
+	// Write any remaining body content after the last segment
+	if lastProcessedPos < len(bodyContent) {
+		instrumentedBody.WriteString(bodyContent[lastProcessedPos:])
+	}
+
+	// Replace the function body in the original SQL
+	result := stmt.RawSQL[:bodyIndexInOriginal] + instrumentedBody.String() + stmt.RawSQL[bodyIndexInOriginal+len(bodyContent):]
+
+	return result, locations
+}
+
+// isCommentToken checks if a token is a comment token that should be excluded
+func isCommentToken(tokenType int32) bool {
+	return tokenType == 275 || tokenType == 276 // Token_SQL_COMMENT || Token_C_COMMENT
 }
 
 // getIndentation returns the leading whitespace of a line
 func getIndentation(line string) string {
 	return line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-}
-
-// calculateByteOffset calculates the byte offset of a line range within lines
-func calculateByteOffset(lines []string, lineOffset int) int {
-	byteOffset := 0
-	for i := 0; i < lineOffset && i < len(lines); i++ {
-		byteOffset += len(lines[i]) + 1 // +1 for newline character
-	}
-	return byteOffset
-}
-
-// calculateBytePosition calculates the byte offset of a line within a slice of lines
-func calculateBytePosition(lines []string, lineIndex int) int {
-	bytePos := 0
-	for i := 0; i < lineIndex && i < len(lines); i++ {
-		bytePos += len(lines[i]) + 1 // +1 for newline character
-	}
-	return bytePos
 }
 
 // instrumentSQLFunction instruments a SQL function
