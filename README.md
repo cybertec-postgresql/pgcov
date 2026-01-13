@@ -1,3 +1,5 @@
+[![Coverage Status](https://coveralls.io/repos/github/cybertec-postgresql/pgcov/badge.svg)](https://coveralls.io/github/cybertec-postgresql/pgcov)
+
 # pgcov
 
 PostgreSQL test runner and coverage tool
@@ -514,3 +516,4 @@ Contributions welcome! Please open an issue or pull request.
 - **Documentation**: [Full docs](https://github.com/cybertec-postgresql/pgcov/docs)
 - **Issues**: [GitHub Issues](https://github.com/cybertec-postgresql/pgcov/issues)
 - **Examples**: [Examples directory](./examples)
+
