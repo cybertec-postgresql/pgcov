@@ -161,18 +161,3 @@ func GetUniqueFiles(locations []CoveragePoint) []string {
 	}
 	return files
 }
-
-// ConvertPositionToLine converts a byte position in source text to a line number (1-indexed)
-func ConvertPositionToLine(sourceText string, startPos int) int {
-	if startPos < 0 || startPos > len(sourceText) {
-		return 1
-	}
-
-	line := 1
-	for i := 0; i < startPos && i < len(sourceText); i++ {
-		if sourceText[i] == '\n' {
-			line++
-		}
-	}
-	return line
-}

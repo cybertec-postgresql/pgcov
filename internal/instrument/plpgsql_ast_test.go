@@ -62,16 +62,45 @@ $$ LANGUAGE plpgsql;`
 		t.Errorf("Expected 4 coverage points, got %d", len(instrumented.Locations))
 	}
 
-	// Verify coverage points are at the correct lines (by converting positions to lines)
-	expectedLines := []int{7, 9, 11, 14}
+	// Verify coverage points are positioned at the expected executable statements
+	sqlContent, _ := os.ReadFile(tmpFile)
+	sqlText := string(sqlContent)
+	
+	// Expected executable statements that should have coverage points
+	expectedStatements := []string{
+		"discount_rate := 0.20",
+		"discount_rate := 0.10", 
+		"discount_rate := 0.05",
+		"RETURN total_amount * discount_rate",
+	}
+	
+	if len(instrumented.Locations) != len(expectedStatements) {
+		t.Errorf("Expected %d coverage points, got %d", len(expectedStatements), len(instrumented.Locations))
+	}
+	
 	for i, cp := range instrumented.Locations {
-		// Convert position to line number for validation
-		// For this test, we'll use the original SQL content
-		sqlContent, _ := os.ReadFile(tmpFile)
-		actualLine := ConvertPositionToLine(string(sqlContent), cp.StartPos)
-		if actualLine != expectedLines[i] {
-			t.Errorf("Coverage point %d: expected line %d, got %d", i, expectedLines[i], actualLine)
+		if i >= len(expectedStatements) {
+			break
 		}
+		
+		// Extract the actual code at the coverage point position
+		if cp.StartPos < 0 || cp.StartPos >= len(sqlText) {
+			t.Errorf("Coverage point %d: invalid start position %d", i, cp.StartPos)
+			continue
+		}
+		
+		// Get a reasonable chunk of text around the coverage point to verify it's correct
+		endPos := cp.StartPos + cp.Length
+		if endPos > len(sqlText) {
+			endPos = len(sqlText)
+		}
+		actualText := strings.TrimSpace(sqlText[cp.StartPos:endPos])
+		
+		// Check if the coverage point contains the expected statement
+		if !strings.Contains(actualText, expectedStatements[i]) {
+			t.Errorf("Coverage point %d: expected to contain %q, got %q", i, expectedStatements[i], actualText)
+		}
+		
 		if cp.ImplicitCoverage {
 			t.Errorf("Coverage point %d: should not be implicit", i)
 		}

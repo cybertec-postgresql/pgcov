@@ -201,13 +201,12 @@ type executableSegment struct {
 func findExecutableSegments(bodyContent string, tokens []*pgquery.ScanToken) []executableSegment {
 	var segments []executableSegment
 
-	segmentStart := 0
 	hasExecutableContent := false
+	firstExecutableTokenPos := -1
 
 	for idx, token := range tokens {
 		if token.Token == pgquery.Token_BEGIN_P { // Skip until BEGIN token
 			tokens = tokens[idx+1:]
-			segmentStart = int(token.End)
 			break
 		}
 	}
@@ -220,16 +219,16 @@ func findExecutableSegments(bodyContent string, tokens []*pgquery.ScanToken) []e
 
 		// Check if this is a semicolon (statement separator)
 		if token.Token == pgquery.Token_ASCII_59 { // Token_ASCII_59 - ";"
-			if hasExecutableContent {
+			if hasExecutableContent && firstExecutableTokenPos >= 0 {
 				// Check if this segment represents an executable statement
 				segmentEnd := int(token.Start)
-				segmentContent := bodyContent[segmentStart:segmentEnd]
+				segmentContent := bodyContent[firstExecutableTokenPos:segmentEnd]
 
 				if isExecutableSegment(segmentContent) {
 					segment := executableSegment{
-						startPos:  segmentStart,
+						startPos:  firstExecutableTokenPos,
 						endPos:    segmentEnd,
-						lineStart: convertByteOffsetToLine(bodyContent, segmentStart),
+						lineStart: convertByteOffsetToLine(bodyContent, firstExecutableTokenPos),
 						lineEnd:   convertByteOffsetToLine(bodyContent, segmentEnd),
 					}
 					segments = append(segments, segment)
@@ -237,22 +236,25 @@ func findExecutableSegments(bodyContent string, tokens []*pgquery.ScanToken) []e
 			}
 
 			// Reset for next segment
-			segmentStart = int(token.End)
 			hasExecutableContent = false
+			firstExecutableTokenPos = -1
 		} else {
 			// This is some non-comment token, so we have content
+			if !hasExecutableContent {
+				firstExecutableTokenPos = int(token.Start)
+			}
 			hasExecutableContent = true
 		}
 	}
 
 	// Handle the last segment if there's remaining content
-	if hasExecutableContent && segmentStart < len(bodyContent) {
-		segmentContent := bodyContent[segmentStart:]
+	if hasExecutableContent && firstExecutableTokenPos >= 0 && firstExecutableTokenPos < len(bodyContent) {
+		segmentContent := bodyContent[firstExecutableTokenPos:]
 		if isExecutableSegment(segmentContent) {
 			segment := executableSegment{
-				startPos:  segmentStart,
+				startPos:  firstExecutableTokenPos,
 				endPos:    len(bodyContent),
-				lineStart: convertByteOffsetToLine(bodyContent, segmentStart),
+				lineStart: convertByteOffsetToLine(bodyContent, firstExecutableTokenPos),
 				lineEnd:   convertByteOffsetToLine(bodyContent, len(bodyContent)),
 			}
 			segments = append(segments, segment)
