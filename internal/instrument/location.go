@@ -2,6 +2,15 @@ package instrument
 
 import "fmt"
 
+// FormatSignalID generates a signal ID for a coverage point
+// Format: {file}:{startPos}:{length} or {file}:{startPos}:{length}:{branch}
+func FormatSignalID(file string, startPos int, length int, branch string) string {
+	if branch == "" {
+		return fmt.Sprintf("%s:%d:%d", file, startPos, length)
+	}
+	return fmt.Sprintf("%s:%d:%d:%s", file, startPos, length, branch)
+}
+
 // TrackPosition creates a new coverage point for a given file, position, and length
 func TrackPosition(file string, startPos int, length int) CoveragePoint {
 	return CoveragePoint{

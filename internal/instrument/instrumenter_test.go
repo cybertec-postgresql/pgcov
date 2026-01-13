@@ -10,6 +10,49 @@ import (
 	"github.com/cybertec-postgresql/pgcov/internal/parser"
 )
 
+func TestInstrumentWithLexer(t *testing.T) {
+	sql := `CREATE OR REPLACE FUNCTION get_grade(score INT)
+RETURNS TEXT AS $$
+BEGIN
+    IF score >= 90 THEN
+        RETURN 'A';
+    ELSIF score >= 80 THEN
+        RETURN 'B';
+    ELSIF score >= 70 THEN
+        RETURN 'C';
+    ELSE
+        RETURN 'F';
+    END IF;
+END;
+$$ LANGUAGE plpgsql;`
+
+	res, err := parser.ParseSQL(sql)
+	if err != nil {
+		t.Fatalf("ParseSQL() error = %v", err)
+	}
+	if len(res.Stmts) == 0 {
+		t.Fatal("ParseSQL() returned no statements")
+	}
+	stmt := &parser.Statement{
+		RawSQL: sql,
+		Node:   res.Stmts[0].GetStmt(),
+	}
+
+	instrumentedSQL, coveragePoints := instrumentWithLexer(stmt, "test.sql")
+	if instrumentedSQL == "" {
+		t.Error("instrumentWithLexer() returned empty instrumented SQL")
+	}
+	if len(coveragePoints) == 0 {
+		t.Error("instrumentWithLexer() returned no coverage points")
+	}
+
+	// Should have NOTIFY calls injected
+	if !strings.Contains(instrumentedSQL, "pg_notify") {
+		t.Error("instrumentWithLexer() did not inject NOTIFY calls")
+	}
+	t.Log(instrumentedSQL)
+}
+
 func TestInstrument_BasicSQL(t *testing.T) {
 	sql := "SELECT 1;"
 

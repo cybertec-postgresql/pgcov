@@ -33,8 +33,31 @@
     // Go language server (gopls) settings
     "gopls": {
         "build.env": {
-            "CGO_ENABLED": "1"
+            "CGO_ENABLED": "1",
+            "CC": "C:\\msys64\\mingw64\\bin\\gcc.exe"
         }
+    },
+    // Go extension debugging configuration
+    "go.delveConfig": {
+        "apiVersion": 2,
+        "showGlobalVariables": true
+    },
+    // Ensure Go test runner uses CGO
+    "go.testEnvVars": {
+        "CGO_ENABLED": "1",
+        "CC": "C:\\msys64\\mingw64\\bin\\gcc.exe",
+        "PATH": "${env:PATH};C:\\msys64\\mingw64\\bin"
+    },
+    // Go build tags and flags
+    "go.buildTags": "",
+    "go.buildFlags": ["-ldflags", "-s -w"],
+    "go.testFlags": ["-v"],
+    "go.testTimeout": "300s",
+    // Additional settings to help with debugging
+    "go.useLanguageServer": true,
+    "go.alternateTools": {},
+    "go.enableCodeLens": {
+        "runtest": true
     }
 }
 

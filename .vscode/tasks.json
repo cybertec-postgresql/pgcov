@@ -30,6 +30,13 @@
             "label": "Unit Test",
             "type": "shell",
             "command": "go test -failfast -p 1 -timeout=300s -parallel=1 .${pathSeparator}${relativeFileDirname}${pathSeparator}... -coverprofile='coverage.out' -json | tparse -all -progress",
+            "options": {
+                "env": {
+                    "CGO_ENABLED": "1",
+                    "CC": "C:\\msys64\\mingw64\\bin\\gcc.exe",
+                    "PATH": "${env:PATH};C:\\msys64\\mingw64\\bin"
+                }
+            },
             "problemMatcher": [
                 "$go"
             ],
@@ -42,6 +49,31 @@
                 "echo": true,
                 "focus": true
             }
+        },
+        {
+            "label": "Debug Test Build",
+            "type": "shell",
+            "command": "go",
+            "args": [
+                "test",
+                "-c",
+                "-gcflags",
+                "all=-N -l",
+                "./${relativeFileDirname}"
+            ],
+            "options": {
+                "env": {
+                    "CGO_ENABLED": "1",
+                    "CC": "C:\\msys64\\mingw64\\bin\\gcc.exe",
+                    "PATH": "${env:PATH};C:\\msys64\\mingw64\\bin"
+                }
+            },
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": ["$go"]
         },
         {
             "label": "Coverage Report",
