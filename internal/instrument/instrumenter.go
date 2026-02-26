@@ -128,66 +128,62 @@ func isDOBlock(stmt *parser.Statement) bool {
 	return stmt.Node != nil && stmt.Node.GetDoStmt() != nil
 }
 
-func instrumentWithLexer(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
+// extractFunctionBody extracts the function/DO-block body text from the AST node.
+// Returns the body text or "" if not found.
+func extractFunctionBody(stmt *parser.Statement) string {
 	if stmt.Node == nil {
-		return stmt.RawSQL, nil
+		return ""
 	}
-
-	// Extract function body from the parsed AST node
-	var functionBodyText string
 
 	switch node := stmt.Node.Node; node.(type) {
 	case *pgquery.Node_CreateFunctionStmt:
-		// Get the function body from the "as" option
 		createFunc := stmt.Node.GetCreateFunctionStmt()
 		for _, opt := range createFunc.Options {
 			if defElem := opt.GetDefElem(); defElem != nil && defElem.Defname == "as" {
 				if defElem.Arg != nil {
 					if strList := defElem.Arg.GetList(); strList != nil && len(strList.Items) > 0 {
 						if strNode := strList.Items[0].GetString_(); strNode != nil {
-							functionBodyText = strNode.Sval
-							break
+							return strNode.Sval
 						}
 					} else if strNode := defElem.Arg.GetString_(); strNode != nil {
-						functionBodyText = strNode.Sval
-						break
+						return strNode.Sval
 					}
 				}
 			}
 		}
 
 	case *pgquery.Node_DoStmt:
-		// For DO blocks
 		if doStmt := stmt.Node.GetDoStmt(); len(doStmt.Args) > 0 {
 			if strNode := doStmt.Args[0].GetString_(); strNode != nil {
-				functionBodyText = strNode.Sval
+				return strNode.Sval
 			}
 		}
+	}
 
-	default:
+	return ""
+}
+
+func instrumentWithLexer(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
+	functionBodyText := extractFunctionBody(stmt)
+	if functionBodyText == "" {
 		return stmt.RawSQL, nil
 	}
 
-	// Scan the function body content with lexer
-	ScanRes, err := pgquery.Scan(functionBodyText)
-	if err != nil {
-		// Return original on scan error
-		return stmt.RawSQL, nil
-	}
-
-	tokens := ScanRes.GetTokens()
+	// Scan the function body content with our PL/pgSQL lexer
+	scanner := parser.NewScanner(functionBodyText)
+	tokens := scanner.ScanAll()
 	if len(tokens) == 0 {
 		return stmt.RawSQL, nil
 	}
 
-	// Find executable statement boundaries in the body content
-	executableSegments := findExecutableSegments(functionBodyText, tokens)
+	// Find executable statement boundaries in the body content (skip to BEGIN for PL/pgSQL)
+	executableSegments := findExecutableSegments(functionBodyText, tokens, true)
 	if len(executableSegments) == 0 {
 		return stmt.RawSQL, nil
 	}
 
 	// Create coverage points and inject PERFORM calls
-	return instrumentFunctionBodyFromAST(stmt, filePath, functionBodyText, executableSegments)
+	return instrumentFunctionBodyFromAST(stmt, filePath, functionBodyText, executableSegments, "PERFORM")
 }
 
 type executableSegment struct {
@@ -197,31 +193,35 @@ type executableSegment struct {
 	lineEnd   int // Line number in body content (0-based)
 }
 
-// findExecutableSegments finds executable statement segments in function body
-func findExecutableSegments(bodyContent string, tokens []*pgquery.ScanToken) []executableSegment {
+// findExecutableSegments finds executable statement segments in function body.
+// When skipToBegin is true (PL/pgSQL), tokens before the first BEGIN are skipped.
+// When skipToBegin is false (SQL functions), all tokens are considered immediately.
+func findExecutableSegments(bodyContent string, tokens []parser.Token, skipToBegin bool) []executableSegment {
 	var segments []executableSegment
 
 	hasExecutableContent := false
 	firstExecutableTokenPos := -1
 
-	for idx, token := range tokens {
-		if token.Token == pgquery.Token_BEGIN_P { // Skip until BEGIN token
-			tokens = tokens[idx+1:]
-			break
+	if skipToBegin {
+		for idx, token := range tokens {
+			if token.Type == parser.KBegin { // Skip until BEGIN token
+				tokens = tokens[idx+1:]
+				break
+			}
 		}
 	}
 
 	for _, token := range tokens {
 		// Skip comment tokens
-		if isCommentToken(int32(token.Token)) {
+		if token.Type == parser.Comment {
 			continue
 		}
 
 		// Check if this is a semicolon (statement separator)
-		if token.Token == pgquery.Token_ASCII_59 { // Token_ASCII_59 - ";"
+		if token.Type == parser.TokenType(';') {
 			if hasExecutableContent && firstExecutableTokenPos >= 0 {
 				// Check if this segment represents an executable statement
-				segmentEnd := int(token.Start)
+				segmentEnd := token.Pos
 				segmentContent := bodyContent[firstExecutableTokenPos:segmentEnd]
 
 				if isExecutableSegment(segmentContent) {
@@ -241,7 +241,7 @@ func findExecutableSegments(bodyContent string, tokens []*pgquery.ScanToken) []e
 		} else {
 			// This is some non-comment token, so we have content
 			if !hasExecutableContent {
-				firstExecutableTokenPos = int(token.Start)
+				firstExecutableTokenPos = token.Pos
 			}
 			hasExecutableContent = true
 		}
@@ -321,8 +321,9 @@ func convertByteOffsetToLine(sql string, byteOffset int) int {
 	return lineIdx
 }
 
-// instrumentFunctionBodyFromAST injects PERFORM calls using AST-extracted function body
-func instrumentFunctionBodyFromAST(stmt *parser.Statement, filePath string, bodyContent string, segments []executableSegment) (string, []CoveragePoint) {
+// instrumentFunctionBodyFromAST injects coverage-tracking calls using AST-extracted function body.
+// notifyCmd is the SQL command used for the pg_notify call: "PERFORM" for PL/pgSQL, "SELECT" for SQL functions.
+func instrumentFunctionBodyFromAST(stmt *parser.Statement, filePath string, bodyContent string, segments []executableSegment, notifyCmd string) (string, []CoveragePoint) {
 	var locations []CoveragePoint
 
 	// Find where the function body content actually starts in the original SQL
@@ -381,9 +382,9 @@ func instrumentFunctionBodyFromAST(stmt *parser.Statement, filePath string, body
 			}
 		}
 
-		// Inject PERFORM pg_notify call before the segment
-		notifyCall := fmt.Sprintf("%sPERFORM pg_notify('pgcov', '%s');\n",
-			indent, strings.ReplaceAll(cp.SignalID, "'", "''"))
+		// Inject coverage-tracking pg_notify call before the segment
+		notifyCall := fmt.Sprintf("%s%s pg_notify('pgcov', '%s');\n",
+			indent, notifyCmd, strings.ReplaceAll(cp.SignalID, "'", "''"))
 		instrumentedBody.WriteString(notifyCall)
 
 		// Write the original segment content
@@ -403,33 +404,35 @@ func instrumentFunctionBodyFromAST(stmt *parser.Statement, filePath string, body
 	return result, locations
 }
 
-// isCommentToken checks if a token is a comment token that should be excluded
-func isCommentToken(tokenType int32) bool {
-	return tokenType == 275 || tokenType == 276 // Token_SQL_COMMENT || Token_C_COMMENT
-}
-
 // getIndentation returns the leading whitespace of a line
 func getIndentation(line string) string {
 	return line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 }
 
-// instrumentSQLFunction instruments a SQL function
+// instrumentSQLFunction instruments a SQL-language function.
+// SQL functions have no DECLARE/BEGIN block, so we scan the body immediately.
+// Since PERFORM is not valid in SQL functions, we use SELECT pg_notify(...) instead.
 func instrumentSQLFunction(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
-	// For SQL functions, we can't inject PERFORM, so we mark the function definition
-	// Use the byte position from the parsed statement
-	bytePos := stmt.StartPos
-	stmtLength := len(stmt.RawSQL)
-	cp := CoveragePoint{
-		File:     filePath,
-		StartPos: bytePos,
-		Length:   stmtLength,
-		Branch:   "",
+	functionBodyText := extractFunctionBody(stmt)
+	if functionBodyText == "" {
+		return stmt.RawSQL, nil
 	}
-	cp.SignalID = FormatSignalID(cp.File, cp.StartPos, cp.Length, cp.Branch)
 
-	// SQL functions are harder to instrument - for now, just track the function call
-	// This would require wrapping the SQL expression which is complex
-	return stmt.RawSQL, []CoveragePoint{cp}
+	// Scan the function body with our PL/pgSQL lexer (works for plain SQL too)
+	scanner := parser.NewScanner(functionBodyText)
+	tokens := scanner.ScanAll()
+	if len(tokens) == 0 {
+		return stmt.RawSQL, nil
+	}
+
+	// Find executable segments without skipping to BEGIN (SQL functions have no BEGIN)
+	executableSegments := findExecutableSegments(functionBodyText, tokens, false)
+	if len(executableSegments) == 0 {
+		return stmt.RawSQL, nil
+	}
+
+	// Inject SELECT pg_notify calls
+	return instrumentFunctionBodyFromAST(stmt, filePath, functionBodyText, executableSegments, "SELECT")
 }
 
 // markStatementLinesAsCovered creates coverage points for all non-comment lines
