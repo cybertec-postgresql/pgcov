@@ -51,7 +51,7 @@ pgcov/
 
 ## Core Principles & Constitution
 
-**CRITICAL**: All development MUST comply with the project constitution. Read [`.specify/memory/constitution.md`](../.specify/memory/constitution.md) before making changes.
+**CRITICAL**: All development MUST comply with the project constitution. 
 
 ### The Six Principles
 

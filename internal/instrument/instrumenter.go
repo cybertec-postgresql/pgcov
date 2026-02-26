@@ -164,173 +164,33 @@ func extractFunctionBody(stmt *parser.Statement) string {
 }
 
 func instrumentWithLexer(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
-	functionBodyText := extractFunctionBody(stmt)
-	if functionBodyText == "" {
+	return instrumentBody(stmt, filePath, true, "PERFORM")
+}
+
+// instrumentSQLFunction instruments a SQL-language function.
+// SQL functions have no DECLARE/BEGIN block, so we scan the body immediately.
+// Since PERFORM is not valid in SQL functions, we use SELECT pg_notify(...) instead.
+func instrumentSQLFunction(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
+	return instrumentBody(stmt, filePath, false, "SELECT")
+}
+
+// instrumentBody scans the function body token-by-token using the streaming
+// Scan() method and injects coverage-tracking calls at each executable
+// statement boundary.  This single-pass approach mirrors SplitStatements and
+// avoids materializing the full token slice, which saves memory on large bodies.
+//
+// For PL/pgSQL (skipToBegin=true), tokens before the first BEGIN are skipped.
+// For SQL functions (skipToBegin=false), instrumentation starts immediately.
+// notifyCmd is "PERFORM" for PL/pgSQL or "SELECT" for SQL functions.
+func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, notifyCmd string) (string, []CoveragePoint) {
+	bodyContent := extractFunctionBody(stmt)
+	if bodyContent == "" {
 		return stmt.RawSQL, nil
 	}
 
-	// Scan the function body content with our PL/pgSQL lexer
-	scanner := parser.NewScanner(functionBodyText)
-	tokens := scanner.ScanAll()
-	if len(tokens) == 0 {
-		return stmt.RawSQL, nil
-	}
-
-	// Find executable statement boundaries in the body content (skip to BEGIN for PL/pgSQL)
-	executableSegments := findExecutableSegments(functionBodyText, tokens, true)
-	if len(executableSegments) == 0 {
-		return stmt.RawSQL, nil
-	}
-
-	// Create coverage points and inject PERFORM calls
-	return instrumentFunctionBodyFromAST(stmt, filePath, functionBodyText, executableSegments, "PERFORM")
-}
-
-type executableSegment struct {
-	startPos  int // Position in body content
-	endPos    int // Position in body content
-	lineStart int // Line number in body content (0-based)
-	lineEnd   int // Line number in body content (0-based)
-}
-
-// findExecutableSegments finds executable statement segments in function body.
-// When skipToBegin is true (PL/pgSQL), tokens before the first BEGIN are skipped.
-// When skipToBegin is false (SQL functions), all tokens are considered immediately.
-func findExecutableSegments(bodyContent string, tokens []parser.Token, skipToBegin bool) []executableSegment {
-	var segments []executableSegment
-
-	hasExecutableContent := false
-	firstExecutableTokenPos := -1
-
-	if skipToBegin {
-		for idx, token := range tokens {
-			if token.Type == parser.KBegin { // Skip until BEGIN token
-				tokens = tokens[idx+1:]
-				break
-			}
-		}
-	}
-
-	for _, token := range tokens {
-		// Skip comment tokens
-		if token.Type == parser.Comment {
-			continue
-		}
-
-		// Check if this is a semicolon (statement separator)
-		if token.Type == parser.TokenType(';') {
-			if hasExecutableContent && firstExecutableTokenPos >= 0 {
-				// Check if this segment represents an executable statement
-				segmentEnd := token.Pos
-				segmentContent := bodyContent[firstExecutableTokenPos:segmentEnd]
-
-				if isExecutableSegment(segmentContent) {
-					segment := executableSegment{
-						startPos:  firstExecutableTokenPos,
-						endPos:    segmentEnd,
-						lineStart: convertByteOffsetToLine(bodyContent, firstExecutableTokenPos),
-						lineEnd:   convertByteOffsetToLine(bodyContent, segmentEnd),
-					}
-					segments = append(segments, segment)
-				}
-			}
-
-			// Reset for next segment
-			hasExecutableContent = false
-			firstExecutableTokenPos = -1
-		} else {
-			// This is some non-comment token, so we have content
-			if !hasExecutableContent {
-				firstExecutableTokenPos = token.Pos
-			}
-			hasExecutableContent = true
-		}
-	}
-
-	// Handle the last segment if there's remaining content
-	if hasExecutableContent && firstExecutableTokenPos >= 0 && firstExecutableTokenPos < len(bodyContent) {
-		segmentContent := bodyContent[firstExecutableTokenPos:]
-		if isExecutableSegment(segmentContent) {
-			segment := executableSegment{
-				startPos:  firstExecutableTokenPos,
-				endPos:    len(bodyContent),
-				lineStart: convertByteOffsetToLine(bodyContent, firstExecutableTokenPos),
-				lineEnd:   convertByteOffsetToLine(bodyContent, len(bodyContent)),
-			}
-			segments = append(segments, segment)
-		}
-	}
-
-	return segments
-}
-
-// isExecutableSegment determines if a segment represents an executable statement
-func isExecutableSegment(segmentContent string) bool {
-	trimmedSegment := strings.TrimSpace(segmentContent)
-	if trimmedSegment == "" {
-		return false
-	}
-
-	// Convert to uppercase for easier matching
-	upper := strings.ToUpper(trimmedSegment)
-
-	// Skip pure structural statements (only if they don't contain other executable content)
-	if upper == "BEGIN" || upper == "END" {
-		return false
-	}
-
-	// Include assignment statements (contain :=)
-	if strings.Contains(segmentContent, ":=") {
-		return true
-	}
-
-	// Include RETURN statements
-	if strings.HasPrefix(upper, "RETURN") || strings.Contains(upper, "\nRETURN ") || strings.Contains(upper, " RETURN ") {
-		return true
-	}
-
-	// Include RAISE statements
-	if strings.HasPrefix(upper, "RAISE") || strings.Contains(upper, "\nRAISE ") || strings.Contains(upper, " RAISE ") {
-		return true
-	}
-
-	// Include PERFORM statements
-	if strings.HasPrefix(upper, "PERFORM") || strings.Contains(upper, "\nPERFORM ") || strings.Contains(upper, " PERFORM ") {
-		return true
-	}
-
-	// Include SQL statements (SELECT, INSERT, UPDATE, DELETE, etc.)
-	if strings.HasPrefix(upper, "SELECT") || strings.Contains(upper, "\nSELECT ") || strings.Contains(upper, " SELECT ") ||
-		strings.HasPrefix(upper, "INSERT") || strings.Contains(upper, "\nINSERT ") || strings.Contains(upper, " INSERT ") ||
-		strings.HasPrefix(upper, "UPDATE") || strings.Contains(upper, "\nUPDATE ") || strings.Contains(upper, " UPDATE ") ||
-		strings.HasPrefix(upper, "DELETE") || strings.Contains(upper, "\nDELETE ") || strings.Contains(upper, " DELETE ") {
-		return true
-	}
-
-	return false
-}
-
-// convertByteOffsetToLine converts a byte offset to a 0-based line index
-func convertByteOffsetToLine(sql string, byteOffset int) int {
-	lineIdx := 0
-	for i := 0; i < byteOffset && i < len(sql); i++ {
-		if sql[i] == '\n' {
-			lineIdx++
-		}
-	}
-	return lineIdx
-}
-
-// instrumentFunctionBodyFromAST injects coverage-tracking calls using AST-extracted function body.
-// notifyCmd is the SQL command used for the pg_notify call: "PERFORM" for PL/pgSQL, "SELECT" for SQL functions.
-func instrumentFunctionBodyFromAST(stmt *parser.Statement, filePath string, bodyContent string, segments []executableSegment, notifyCmd string) (string, []CoveragePoint) {
-	var locations []CoveragePoint
-
-	// Find where the function body content actually starts in the original SQL
-	// Use the AST location if available, otherwise search for the body content
+	// Locate the body inside the original CREATE FUNCTION / DO statement text.
 	bodyIndexInOriginal := strings.Index(stmt.RawSQL, bodyContent)
 	if bodyIndexInOriginal == -1 {
-		// If we can't find the exact body content, try to find it with different whitespace
 		normalizedBody := strings.TrimSpace(bodyContent)
 		for i := 0; i < len(stmt.RawSQL)-len(normalizedBody); i++ {
 			if strings.TrimSpace(stmt.RawSQL[i:i+len(normalizedBody)]) == normalizedBody {
@@ -339,100 +199,150 @@ func instrumentFunctionBodyFromAST(stmt *parser.Statement, filePath string, body
 			}
 		}
 	}
-
 	if bodyIndexInOriginal == -1 {
-		// Fallback: return original SQL if we can't find the body
 		return stmt.RawSQL, nil
 	}
 
-	// Build instrumented function body
-	instrumentedBody := strings.Builder{}
-	lastProcessedPos := 0
+	sc := parser.NewScanner(bodyContent)
 
-	for _, segment := range segments {
-		// Write any content before this segment
-		if segment.startPos > lastProcessedPos {
-			instrumentedBody.WriteString(bodyContent[lastProcessedPos:segment.startPos])
+	var locations []CoveragePoint
+	var instrumentedBody strings.Builder
+	lastWrittenPos := 0
+	pastBegin := !skipToBegin
+
+	// Current-segment tracking (same state as the old findExecutableSegments).
+	hasContent := false
+	segStart := -1
+
+	// emitSegment checks the segment between segStart..segEnd for
+	// executability and, if it qualifies, writes the gap + notify + segment
+	// into instrumentedBody.
+	emitSegment := func(segEnd int) {
+		segText := bodyContent[segStart:segEnd]
+		if !isExecutableSegment(segText) {
+			return
 		}
 
-		// Get the segment content
-		segmentContent := bodyContent[segment.startPos:segment.endPos]
-		segmentLines := strings.Split(segmentContent, "\n")
+		// Write any unwritten content preceding this segment.
+		if segStart > lastWrittenPos {
+			instrumentedBody.WriteString(bodyContent[lastWrittenPos:segStart])
+		}
 
-		// Create coverage point for this segment
-		// Convert body positions to absolute file positions
-		absoluteStartPos := stmt.StartPos + bodyIndexInOriginal + segment.startPos
+		// Build coverage point.
+		absoluteStartPos := stmt.StartPos + bodyIndexInOriginal + segStart
 		cp := CoveragePoint{
 			File:             filePath,
 			StartPos:         absoluteStartPos,
-			Length:           len(segmentContent),
+			Length:           len(segText),
 			Branch:           "",
 			ImplicitCoverage: false,
 		}
 		cp.SignalID = FormatSignalID(cp.File, cp.StartPos, cp.Length, cp.Branch)
 		locations = append(locations, cp)
 
-		// Find the first non-empty line in segment to get proper indentation
+		// Determine indentation from the first non-empty line.
 		indent := ""
-		for _, line := range segmentLines {
-			trimmed := strings.TrimSpace(line)
-			if trimmed != "" {
+		for _, line := range strings.Split(segText, "\n") {
+			if strings.TrimSpace(line) != "" {
 				indent = getIndentation(line)
 				break
 			}
 		}
 
-		// Inject coverage-tracking pg_notify call before the segment
-		notifyCall := fmt.Sprintf("%s%s pg_notify('pgcov', '%s');\n",
+		// Write notify call, then the original segment text.
+		fmt.Fprintf(&instrumentedBody, "%s%s pg_notify('pgcov', '%s');\n",
 			indent, notifyCmd, strings.ReplaceAll(cp.SignalID, "'", "''"))
-		instrumentedBody.WriteString(notifyCall)
-
-		// Write the original segment content
-		instrumentedBody.WriteString(segmentContent)
-
-		lastProcessedPos = segment.endPos
+		instrumentedBody.WriteString(segText)
+		lastWrittenPos = segEnd
 	}
 
-	// Write any remaining body content after the last segment
-	if lastProcessedPos < len(bodyContent) {
-		instrumentedBody.WriteString(bodyContent[lastProcessedPos:])
+	// Stream tokens one at a time – mirrors SplitStatements style.
+	for {
+		tok := sc.Scan()
+		if tok.Type == parser.EOF {
+			break
+		}
+
+		// Skip everything before the first BEGIN in PL/pgSQL bodies.
+		if !pastBegin {
+			if tok.Type == parser.KBegin {
+				pastBegin = true
+			}
+			continue
+		}
+
+		// Comments are not executable content.
+		if tok.Type == parser.Comment {
+			continue
+		}
+
+		if tok.Type == parser.TokenType(';') {
+			if hasContent && segStart >= 0 {
+				emitSegment(tok.Pos)
+			}
+			hasContent = false
+			segStart = -1
+		} else {
+			if !hasContent {
+				segStart = tok.Pos
+			}
+			hasContent = true
+		}
 	}
 
-	// Replace the function body in the original SQL
+	// Handle a trailing segment that has no closing semicolon.
+	if hasContent && segStart >= 0 && segStart < len(bodyContent) {
+		emitSegment(len(bodyContent))
+	}
+
+	if len(locations) == 0 {
+		return stmt.RawSQL, nil
+	}
+
+	// Flush any remaining body content after the last instrumented segment.
+	if lastWrittenPos < len(bodyContent) {
+		instrumentedBody.WriteString(bodyContent[lastWrittenPos:])
+	}
+
 	result := stmt.RawSQL[:bodyIndexInOriginal] + instrumentedBody.String() + stmt.RawSQL[bodyIndexInOriginal+len(bodyContent):]
-
 	return result, locations
 }
 
-// getIndentation returns the leading whitespace of a line
-func getIndentation(line string) string {
-	return line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+// isExecutableSegment determines whether a ;-terminated segment from a function
+// body represents executable code.  It scans the first token using the PL/pgSQL
+// lexer instead of relying on string-prefix matching.
+//
+// The logic is an exclusion list: everything is considered executable except
+// known structural markers (BEGIN, END, LOOP, DECLARE, EXCEPTION).
+func isExecutableSegment(segmentContent string) bool {
+	sc := parser.NewScanner(segmentContent)
+
+	// Find the first non-comment token.
+	var first parser.Token
+	for {
+		first = sc.Scan()
+		if first.Type == parser.EOF {
+			return false // empty or comments-only
+		}
+		if first.Type != parser.Comment {
+			break
+		}
+	}
+
+	switch first.Type {
+	case parser.KBegin, parser.KEnd, parser.KLoop, parser.KDeclare, parser.KException:
+		// Pure block openers/closers and declaration sections — not useful code.
+		return false
+	}
+
+	// Any other leading token (identifier, keyword, operator, etc.)
+	// indicates an executable statement.
+	return true
 }
 
-// instrumentSQLFunction instruments a SQL-language function.
-// SQL functions have no DECLARE/BEGIN block, so we scan the body immediately.
-// Since PERFORM is not valid in SQL functions, we use SELECT pg_notify(...) instead.
-func instrumentSQLFunction(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
-	functionBodyText := extractFunctionBody(stmt)
-	if functionBodyText == "" {
-		return stmt.RawSQL, nil
-	}
-
-	// Scan the function body with our PL/pgSQL lexer (works for plain SQL too)
-	scanner := parser.NewScanner(functionBodyText)
-	tokens := scanner.ScanAll()
-	if len(tokens) == 0 {
-		return stmt.RawSQL, nil
-	}
-
-	// Find executable segments without skipping to BEGIN (SQL functions have no BEGIN)
-	executableSegments := findExecutableSegments(functionBodyText, tokens, false)
-	if len(executableSegments) == 0 {
-		return stmt.RawSQL, nil
-	}
-
-	// Inject SELECT pg_notify calls
-	return instrumentFunctionBodyFromAST(stmt, filePath, functionBodyText, executableSegments, "SELECT")
+// getIndentation returns the leading whitespace of a line.
+func getIndentation(line string) string {
+	return line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 }
 
 // markStatementLinesAsCovered creates coverage points for all non-comment lines
