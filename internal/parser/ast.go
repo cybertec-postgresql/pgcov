@@ -2,54 +2,7 @@ package parser
 
 import (
 	"strings"
-
-	pgquery "github.com/pganalyze/pg_query_go/v6"
 )
-
-// ExtractStatements extracts individual statements from a parsed SQL file
-func ExtractStatements(sql string, result *pgquery.ParseResult) ([]*Statement, error) {
-	var statements []*Statement
-
-	// Process each statement in the parse result
-	for _, stmt := range result.Stmts {
-		// Get statement location from pg_query_go
-		stmtLocation := stmt.StmtLocation
-		stmtLen := stmt.StmtLen
-
-		// Calculate line numbers
-		startLine := calculateLineNumber(sql, int(stmtLocation))
-		endLine := calculateLineNumber(sql, int(stmtLocation+stmtLen))
-
-		// Extract raw SQL text
-		rawSQL := ""
-		if stmtLocation >= 0 && stmtLocation+stmtLen <= int32(len(sql)) {
-			rawSQL = sql[stmtLocation : stmtLocation+stmtLen]
-
-			// pg_query_go doesn't include the trailing semicolon in stmtLen
-			// Check if there's a semicolon right after and include it
-			endPos := int(stmtLocation + stmtLen)
-			if endPos < len(sql) && sql[endPos] == ';' {
-				rawSQL += ";"
-			}
-		}
-
-		// Classify statement type
-		stmtType := ClassifyStatement(stmt.Stmt)
-
-		statements = append(statements, &Statement{
-			RawSQL:    rawSQL,
-			StartPos:  int(stmtLocation),
-			StartLine: startLine,
-			EndLine:   endLine,
-			Type:      stmtType,
-			Node:      stmt.Stmt,
-		})
-	}
-
-	// If no statements were extracted, return empty slice
-	// Don't create a dummy statement for empty files or comment-only files
-	return statements, nil
-}
 
 // calculateLineNumber converts a byte offset to a 1-indexed line number
 func calculateLineNumber(sql string, offset int) int {
@@ -67,28 +20,6 @@ func calculateLineNumber(sql string, offset int) int {
 		}
 	}
 	return lineNum
-}
-
-// ClassifyStatement determines the type of SQL statement
-func ClassifyStatement(node *pgquery.Node) StatementType {
-	if node == nil {
-		return StmtUnknown
-	}
-
-	switch node.Node.(type) {
-	case *pgquery.Node_CreateFunctionStmt:
-		return StmtFunction
-	case *pgquery.Node_CreateTrigStmt:
-		return StmtTrigger
-	case *pgquery.Node_ViewStmt:
-		return StmtView
-	// Note: pg_query_go doesn't have a separate procedure type in older versions
-	// Procedures are represented as functions in PostgreSQL
-	default:
-		// Check if it's a procedure by looking at the SQL text
-		// This is a heuristic since pg_query_go may not distinguish
-		return StmtOther
-	}
 }
 
 // GetStatementAtLine returns the statement that contains the given line number

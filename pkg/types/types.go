@@ -97,9 +97,3 @@ type CoverageSignal struct {
 	Timestamp time.Time // When signal received
 }
 
-// TempDatabase represents a temporary PostgreSQL database for test isolation
-type TempDatabase struct {
-	Name             string // e.g., "pgcov_test_20260105_a3f9c2b1"
-	CreatedAt        time.Time
-	ConnectionString string
-}

@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,56 +72,6 @@ func TestParse_ValidSQL(t *testing.T) {
 
 			if len(parsed.Statements) != tt.wantStmt {
 				t.Errorf("Parse() got %d statements, want %d", len(parsed.Statements), tt.wantStmt)
-			}
-		})
-	}
-}
-
-func TestParse_SyntaxError(t *testing.T) {
-	tests := []struct {
-		name string
-		sql  string
-	}{
-		{
-			name: "invalid SELECT",
-			sql:  "SELECT FROM;",
-		},
-		{
-			name: "unclosed parenthesis",
-			sql:  "SELECT * FROM users WHERE (id = 1;",
-		},
-		{
-			name: "invalid CREATE",
-			sql:  "CREATE TABLE;",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-			tmpFile := filepath.Join(tmpDir, "test.sql")
-			if err := os.WriteFile(tmpFile, []byte(tt.sql), 0644); err != nil {
-				t.Fatalf("failed to write temp file: %v", err)
-			}
-
-			file := &discovery.DiscoveredFile{
-				Path: tmpFile,
-				Type: discovery.FileTypeSource,
-			}
-
-			parsed, err := Parse(file)
-			if err == nil {
-				t.Errorf("Parse() expected error, got nil")
-			}
-
-			if parsed != nil {
-				t.Errorf("Parse() expected nil parsed result on error, got %v", parsed)
-			}
-
-			// Check error type
-			var parseErr *ParseError
-			if !errors.As(err, &parseErr) {
-				t.Errorf("Parse() error type = %T, want *errors.ParseError", err)
 			}
 		})
 	}
@@ -246,40 +195,34 @@ func TestParseFile(t *testing.T) {
 	}
 }
 
-func TestParseSQL(t *testing.T) {
+func TestParseStatements(t *testing.T) {
 	tests := []struct {
-		name    string
-		sql     string
-		wantErr bool
+		name      string
+		sql       string
+		wantCount int
 	}{
 		{
-			name:    "valid SQL",
-			sql:     "SELECT 1;",
-			wantErr: false,
+			name:      "valid SQL",
+			sql:       "SELECT 1;",
+			wantCount: 1,
 		},
 		{
-			name:    "invalid SQL",
-			sql:     "SELECT FROM;",
-			wantErr: true,
+			name:      "multiple statements",
+			sql:       "SELECT 1; SELECT 2;",
+			wantCount: 2,
+		},
+		{
+			name:      "empty",
+			sql:       "",
+			wantCount: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := ParseSQL(tt.sql)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ParseSQL() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			if !tt.wantErr && result == nil {
-				t.Error("ParseSQL() returned nil result for valid SQL")
-			}
-
-			if tt.wantErr {
-				var parseErr *ParseError
-				if !errors.As(err, &parseErr) {
-					t.Errorf("ParseSQL() error type = %T, want *errors.ParseError", err)
-				}
+			stmts := ParseStatements(tt.sql)
+			if len(stmts) != tt.wantCount {
+				t.Errorf("ParseStatements() got %d statements, want %d", len(stmts), tt.wantCount)
 			}
 		})
 	}

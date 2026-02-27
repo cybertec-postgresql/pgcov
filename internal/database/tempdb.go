@@ -7,166 +7,44 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cybertec-postgresql/pgcov/pkg/types"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// CreateTempDatabase creates a temporary database with a unique name
-func CreateTempDatabase(ctx context.Context, pool *Pool) (*types.TempDatabase, error) {
-	// Generate unique database name
+// CreateTempDatabase creates a temporary database and returns a pool connected to it.
+// The database name is accessible via pool.Config().ConnConfig.Database.
+func CreateTempDatabase(ctx context.Context, adminPool *Pool) (*pgxpool.Pool, error) {
 	timestamp := time.Now().Format("20060102_150405")
 	randomBytes := make([]byte, 4)
 	if _, err := rand.Read(randomBytes); err != nil {
 		return nil, fmt.Errorf("failed to generate random suffix: %w", err)
 	}
 	randomSuffix := hex.EncodeToString(randomBytes)
-
 	dbName := fmt.Sprintf("pgcov_test_%s_%s", timestamp, randomSuffix)
 
-	// Create database (must use a connection to template database)
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to acquire connection: %w", err)
-	}
-	defer conn.Release()
-
-	// CREATE DATABASE cannot run in a transaction
-	createSQL := fmt.Sprintf("CREATE DATABASE %s", dbName)
-	_, err = conn.Exec(ctx, createSQL)
+	_, err := adminPool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", dbName))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary database: %w", err)
 	}
 
-	// Build connection string for the new database by replacing the dbname in the original connection string
-	// Parse the original connection config and change the database
-	baseConfig, err := pgxpool.ParseConfig(pool.config.ConnectionString)
+	// Build connection string for the new database, preserving all original options (sslmode, etc.)
+	config := adminPool.Pool.Config()
+	config.ConnConfig.Database = dbName
+
+	tempPool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
-		// Fallback: if parsing fails, drop the database and return error
-		_, _ = conn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
-		return nil, fmt.Errorf("failed to parse base connection string: %w", err)
+		_, _ = adminPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+		return nil, fmt.Errorf("failed to connect to temp database: %w", err)
 	}
 
-	// Build new connection string with the new database name
-	connString := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		baseConfig.ConnConfig.Host,
-		baseConfig.ConnConfig.Port,
-		baseConfig.ConnConfig.User,
-		baseConfig.ConnConfig.Password,
-		dbName,
-		"prefer") // Default to prefer for sslmode
-
-	return &types.TempDatabase{
-		Name:             dbName,
-		CreatedAt:        time.Now(),
-		ConnectionString: connString,
-	}, nil
+	return tempPool, nil
 }
 
-// DestroyTempDatabase drops a temporary database
-func DestroyTempDatabase(ctx context.Context, pool *Pool, tempDB *types.TempDatabase) error {
-	if tempDB == nil {
+// DestroyTempDatabase closes the temp pool and drops its underlying database.
+func DestroyTempDatabase(ctx context.Context, adminPool *Pool, tempPool *pgxpool.Pool) error {
+	if tempPool == nil {
 		return nil
 	}
-
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to acquire connection: %w", err)
-	}
-	defer conn.Release()
-
-	// Terminate all connections to the database first (PostgreSQL 13+)
-	terminateSQL := `SELECT pg_terminate_backend(pid)
-		FROM pg_stat_activity
-		WHERE datname = $1 AND pid <> pg_backend_pid()`
-
-	_, _ = conn.Exec(ctx, terminateSQL, tempDB.Name)
-
-	// Drop database with FORCE option (PostgreSQL 13+)
-	dropSQL := fmt.Sprintf("DROP DATABASE IF EXISTS %s WITH (FORCE)", tempDB.Name)
-	_, err = conn.Exec(ctx, dropSQL)
-	if err != nil {
-		return fmt.Errorf("failed to drop temporary database %s: %w", tempDB.Name, err)
-	}
-
-	// Verify database was actually dropped
-	if err := verifyDatabaseDropped(ctx, conn, tempDB.Name); err != nil {
-		return fmt.Errorf("cleanup verification failed for database %s: %w", tempDB.Name, err)
-	}
-
-	return nil
-}
-
-// verifyDatabaseDropped checks that a database no longer exists in PostgreSQL catalog
-func verifyDatabaseDropped(ctx context.Context, conn *pgxpool.Conn, dbName string) error {
-	verifySQL := `
-		SELECT EXISTS(
-			SELECT 1 
-			FROM pg_database 
-			WHERE datname = $1
-		)
-	`
-
-	var exists bool
-	err := conn.QueryRow(ctx, verifySQL, dbName).Scan(&exists)
-	if err != nil {
-		return fmt.Errorf("failed to verify database deletion: %w", err)
-	}
-
-	if exists {
-		return fmt.Errorf("database %s still exists after DROP command", dbName)
-	}
-
-	return nil
-}
-
-// CleanupStaleTempDatabases removes old pgcov temporary databases
-// This is useful for cleanup after crashes or interrupted test runs
-// Returns list of cleaned databases and any errors encountered
-func CleanupStaleTempDatabases(ctx context.Context, pool *Pool, _ time.Duration) ([]string, error) {
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to acquire connection: %w", err)
-	}
-	defer conn.Release()
-
-	// Find pgcov temp databases
-	query := `
-		SELECT datname
-		FROM pg_database
-		WHERE datname LIKE 'pgcov_test_%'
-	`
-
-	rows, err := conn.Query(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query temp databases: %w", err)
-	}
-	defer rows.Close()
-
-	var cleaned []string
-	var failedCleanup []string
-
-	for rows.Next() {
-		var dbName string
-		if err := rows.Scan(&dbName); err != nil {
-			continue
-		}
-
-		// Extract timestamp from database name
-		// Format: pgcov_test_YYYYMMDD_HHMMSS_randomhex
-		tempDB := &types.TempDatabase{Name: dbName}
-
-		// Attempt to drop (will fail if database is in use)
-		if err := DestroyTempDatabase(ctx, pool, tempDB); err == nil {
-			cleaned = append(cleaned, dbName)
-		} else {
-			failedCleanup = append(failedCleanup, dbName)
-		}
-	}
-
-	// Report cleanup failures as non-fatal warning
-	if len(failedCleanup) > 0 {
-		return cleaned, fmt.Errorf("failed to cleanup %d databases: %v (may be in use)", len(failedCleanup), failedCleanup)
-	}
-
-	return cleaned, nil
+	tempPool.Close()
+	_, err := adminPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s WITH (FORCE)", tempPool.Config().ConnConfig.Database))
+	return err
 }

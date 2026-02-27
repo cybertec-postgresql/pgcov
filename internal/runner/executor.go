@@ -10,7 +10,6 @@ import (
 	"github.com/cybertec-postgresql/pgcov/internal/database"
 	"github.com/cybertec-postgresql/pgcov/internal/discovery"
 	"github.com/cybertec-postgresql/pgcov/internal/instrument"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Executor orchestrates test execution with coverage tracking
@@ -140,13 +139,13 @@ func (e *Executor) executeTestWorkflow(ctx context.Context, testRun *TestRun, so
 		fmt.Println("[DEBUG] Step 1: Creating temp database...")
 	}
 	// Step 1: Create temporary database
-	tempDB, err := database.CreateTempDatabase(ctx, e.pool)
+	tempPool, err := database.CreateTempDatabase(ctx, e.pool)
 	if err != nil {
 		return fmt.Errorf("failed to create temp database: %w", err)
 	}
-	testRun.Database = tempDB
+	testRun.Database = tempPool.Config().ConnConfig.Database
 	if e.verbose {
-		fmt.Printf("[DEBUG] Created temp database: %s\n", tempDB.Name)
+		fmt.Printf("[DEBUG] Created temp database: %s\n", testRun.Database)
 	}
 
 	// Ensure cleanup
@@ -156,19 +155,11 @@ func (e *Executor) executeTestWorkflow(ctx context.Context, testRun *TestRun, so
 		}
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = database.DestroyTempDatabase(cleanupCtx, e.pool, tempDB)
+		_ = database.DestroyTempDatabase(cleanupCtx, e.pool, tempPool)
 	}()
 
 	if e.verbose {
 		fmt.Println("[DEBUG] Step 2: Connecting to temp database...")
-	}
-	// Step 2: Connect to temp database
-	tempPool, err := pgxpool.New(ctx, tempDB.ConnectionString)
-	if err != nil {
-		return fmt.Errorf("failed to connect to temp database: %w", err)
-	}
-	defer tempPool.Close()
-	if e.verbose {
 		fmt.Println("[DEBUG] Connected to temp database")
 	}
 
@@ -176,7 +167,7 @@ func (e *Executor) executeTestWorkflow(ctx context.Context, testRun *TestRun, so
 		fmt.Println("[DEBUG] Step 3: Starting LISTEN for coverage signals...")
 	}
 	// Step 3: Start LISTEN for coverage signals
-	listener, err := database.NewListener(ctx, tempDB.ConnectionString, "pgcov")
+	listener, err := database.NewListener(ctx, tempPool, "pgcov")
 	if err != nil {
 		return fmt.Errorf("failed to start listener: %w", err)
 	}

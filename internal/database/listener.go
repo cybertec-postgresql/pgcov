@@ -8,28 +8,22 @@ import (
 	"github.com/cybertec-postgresql/pgcov/pkg/types"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Listener handles PostgreSQL LISTEN/NOTIFY for coverage signals
 type Listener struct {
-	conn       *pgx.Conn
-	channel    string
-	signals    chan types.CoverageSignal
-	errors     chan error
-	done       chan struct{}
-	connString string
+	conn    *pgx.Conn
+	channel string
+	signals chan types.CoverageSignal
+	errors  chan error
+	done    chan struct{}
 }
 
-// NewListener creates a new LISTEN/NOTIFY listener
-func NewListener(ctx context.Context, connString string, channel string) (*Listener, error) {
-	// Parse connection string
-	config, err := pgx.ParseConfig(connString)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse connection string: %w", err)
-	}
-
-	// Connect to database
-	conn, err := pgx.ConnectConfig(ctx, config)
+// NewListener creates a new LISTEN/NOTIFY listener using the config from a pool.
+func NewListener(ctx context.Context, pool *pgxpool.Pool, channel string) (*Listener, error) {
+	// Connect using the pool's connection config
+	conn, err := pgx.ConnectConfig(ctx, pool.Config().ConnConfig.Copy())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect for LISTEN: %w", err)
 	}
@@ -42,12 +36,11 @@ func NewListener(ctx context.Context, connString string, channel string) (*Liste
 	}
 
 	listener := &Listener{
-		conn:       conn,
-		channel:    channel,
-		signals:    make(chan types.CoverageSignal, 1000), // Buffered to avoid blocking
-		errors:     make(chan error, 10),
-		done:       make(chan struct{}),
-		connString: connString,
+		conn:    conn,
+		channel: channel,
+		signals: make(chan types.CoverageSignal, 1000), // Buffered to avoid blocking
+		errors:  make(chan error, 10),
+		done:    make(chan struct{}),
 	}
 
 	// Start background goroutine to receive notifications

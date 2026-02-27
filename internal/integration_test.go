@@ -111,10 +111,6 @@ func TestEndToEndWithTestcontainers(t *testing.T) {
 				t.Fatalf("Failed to parse %s: %v", file.RelativePath, err)
 			}
 
-			if parsed.AST == nil {
-				t.Fatalf("No AST generated for %s", file.RelativePath)
-			}
-
 			if len(parsed.Statements) == 0 {
 				t.Logf("Warning: No statements found in %s", file.RelativePath)
 			}
@@ -208,15 +204,15 @@ func TestEndToEndWithTestcontainers(t *testing.T) {
 		defer pool.Close()
 
 		// Test temp database creation
-		tempDB, err := database.CreateTempDatabase(ctx, pool)
+		tempPool, err := database.CreateTempDatabase(ctx, pool)
 		if err != nil {
 			t.Fatalf("Failed to create temp database: %v", err)
 		}
 
-		t.Logf("Created temp database: %s", tempDB.Name)
+		t.Logf("Created temp database: %s", tempPool.Config().ConnConfig.Database)
 
 		// Test temp database cleanup
-		err = database.DestroyTempDatabase(ctx, pool, tempDB)
+		err = database.DestroyTempDatabase(ctx, pool, tempPool)
 		if err != nil {
 			t.Fatalf("Failed to destroy temp database: %v", err)
 		}
@@ -307,12 +303,15 @@ func TestRunnerIsolation(t *testing.T) {
 		t.Fatalf("Failed to create second temp database: %v", err)
 	}
 
+	db1Name := db1.Config().ConnConfig.Database
+	db2Name := db2.Config().ConnConfig.Database
+
 	// Verify different names
-	if db1.Name == db2.Name {
+	if db1Name == db2Name {
 		t.Fatal("Temp databases should have unique names")
 	}
 
-	t.Logf("Created isolated databases: %s and %s", db1.Name, db2.Name)
+	t.Logf("Created isolated databases: %s and %s", db1Name, db2Name)
 
 	// Cleanup
 	if err := database.DestroyTempDatabase(ctx, pool, db1); err != nil {
@@ -722,18 +721,18 @@ func TestTestIndependence(t *testing.T) {
 
 	// Verify databases were properly cleaned up
 	t.Log("Verifying database cleanup...")
-	exists1, err := databaseExists(ctx, pool, run1.Database.Name)
+	exists1, err := databaseExists(ctx, pool, run1.Database)
 	if err != nil {
 		t.Errorf("Failed to check database existence: %v", err)
 	} else if exists1 {
-		t.Errorf("Database %s from run1 was not cleaned up", run1.Database.Name)
+		t.Errorf("Database %s from run1 was not cleaned up", run1.Database)
 	}
 
-	exists2, err := databaseExists(ctx, pool, run2.Database.Name)
+	exists2, err := databaseExists(ctx, pool, run2.Database)
 	if err != nil {
 		t.Errorf("Failed to check database existence: %v", err)
 	} else if exists2 {
-		t.Errorf("Database %s from run2 was not cleaned up", run2.Database.Name)
+		t.Errorf("Database %s from run2 was not cleaned up", run2.Database)
 	}
 
 	if !exists1 && !exists2 {

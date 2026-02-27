@@ -138,6 +138,28 @@ func (c *Collector) GetFileList() []string {
 	return files
 }
 
+// InitializeFromInstrumented seeds the coverage data with 0-hit entries for
+// every non-implicit CoveragePoint that has not yet been recorded. This
+// ensures that unexecuted branches (e.g. ELSIF/ELSE arms that were never
+// taken) appear as "not covered" in reports instead of being absent.
+func (c *Collector) InitializeFromInstrumented(instrumented []*instrument.InstrumentedSQL) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for _, inst := range instrumented {
+		for _, cp := range inst.Locations {
+			if cp.ImplicitCoverage {
+				continue // DDL/DML are tracked separately
+			}
+			// Only seed if not already present (do not overwrite real hit counts).
+			posKey := fmt.Sprintf("%d:%d", cp.StartPos, cp.Length)
+			if _, exists := c.coverage.Positions[cp.File][posKey]; !exists {
+				c.coverage.AddPosition(cp.File, cp.StartPos, cp.Length, 0)
+			}
+		}
+	}
+}
+
 // TotalCoveragePercent returns the overall coverage percentage
 func (c *Collector) TotalCoveragePercent() float64 {
 	c.mu.Lock()

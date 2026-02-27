@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/cybertec-postgresql/pgcov/internal/database"
 	"github.com/cybertec-postgresql/pgcov/internal/discovery"
@@ -14,32 +13,32 @@ import (
 // IsolationValidator tracks and validates test isolation guarantees
 type IsolationValidator struct {
 	mu              sync.Mutex
-	usedDatabases   map[string]time.Time // database name -> creation time
-	activeDatabases map[string]bool      // databases currently in use
-	cleanedUp       map[string]bool      // databases that were properly cleaned up
+	usedDatabases   map[string]struct{} // database name -> seen
+	activeDatabases map[string]bool     // databases currently in use
+	cleanedUp       map[string]bool     // databases that were properly cleaned up
 }
 
 // NewIsolationValidator creates a new isolation validator
 func NewIsolationValidator() *IsolationValidator {
 	return &IsolationValidator{
-		usedDatabases:   make(map[string]time.Time),
+		usedDatabases:   make(map[string]struct{}),
 		activeDatabases: make(map[string]bool),
 		cleanedUp:       make(map[string]bool),
 	}
 }
 
-// TrackDatabase records that a database has been created for a test
-func (iv *IsolationValidator) TrackDatabase(dbName string, createdAt time.Time) error {
+// TrackDatabase records that a database has been created for a test.
+func (iv *IsolationValidator) TrackDatabase(dbName string) error {
 	iv.mu.Lock()
 	defer iv.mu.Unlock()
 
 	// Check for duplicate database names (should never happen with unique generation)
-	if existingTime, exists := iv.usedDatabases[dbName]; exists {
-		return fmt.Errorf("database name collision detected: %s already created at %v", dbName, existingTime)
+	if _, exists := iv.usedDatabases[dbName]; exists {
+		return fmt.Errorf("database name collision detected: %s", dbName)
 	}
 
 	// Record the database
-	iv.usedDatabases[dbName] = createdAt
+	iv.usedDatabases[dbName] = struct{}{}
 	iv.activeDatabases[dbName] = true
 
 	return nil
@@ -128,23 +127,23 @@ func VerifyDatabaseIsolation(ctx context.Context, pool *database.Pool, runs []*T
 
 	// Track all databases used in test runs
 	for _, run := range runs {
-		if run.Database == nil {
+		if run.Database == "" {
 			return fmt.Errorf("test run %s has no database assigned", run.Test.RelativePath)
 		}
 
-		err := validator.TrackDatabase(run.Database.Name, run.Database.CreatedAt)
+		err := validator.TrackDatabase(run.Database)
 		if err != nil {
 			return fmt.Errorf("isolation violation for test %s: %w", run.Test.RelativePath, err)
 		}
 
 		// Verify database was cleaned up by checking if it still exists
-		exists, err := databaseExists(ctx, pool, run.Database.Name)
+		exists, err := databaseExists(ctx, pool, run.Database)
 		if err != nil {
 			return fmt.Errorf("failed to check if database exists: %w", err)
 		}
 
 		if !exists {
-			validator.MarkCleaned(run.Database.Name)
+			validator.MarkCleaned(run.Database)
 		}
 	}
 
@@ -219,8 +218,8 @@ func VerifyStatelessExecution(run1, run2 *TestRun) error {
 	}
 
 	// Verify both tests used different databases
-	if run1.Database.Name == run2.Database.Name {
-		return fmt.Errorf("tests used the same database: %s", run1.Database.Name)
+	if run1.Database == run2.Database {
+		return fmt.Errorf("tests used the same database: %s", run1.Database)
 	}
 
 	// Verify both tests collected the same coverage signals
@@ -278,30 +277,30 @@ func GenerateIsolationReport(ctx context.Context, pool *database.Pool, runs []*T
 
 	// Track all databases
 	for _, run := range runs {
-		if run.Database == nil {
+		if run.Database == "" {
 			report.IsolationViolations = append(report.IsolationViolations,
 				fmt.Sprintf("test %s has no database", run.Test.RelativePath))
 			continue
 		}
 
-		dbNames = append(dbNames, run.Database.Name)
+		dbNames = append(dbNames, run.Database)
 
-		err := validator.TrackDatabase(run.Database.Name, run.Database.CreatedAt)
+		err := validator.TrackDatabase(run.Database)
 		if err != nil {
 			report.IsolationViolations = append(report.IsolationViolations, err.Error())
 			continue
 		}
 
 		// Check if cleaned up
-		exists, err := databaseExists(ctx, pool, run.Database.Name)
+		exists, err := databaseExists(ctx, pool, run.Database)
 		if err != nil {
 			report.IsolationViolations = append(report.IsolationViolations,
-				fmt.Sprintf("failed to check database %s: %v", run.Database.Name, err))
+				fmt.Sprintf("failed to check database %s: %v", run.Database, err))
 			continue
 		}
 
 		if !exists {
-			validator.MarkCleaned(run.Database.Name)
+			validator.MarkCleaned(run.Database)
 		}
 	}
 
@@ -370,9 +369,9 @@ func ValidateOrderIndependence(ctx context.Context, executor *Executor, testFile
 		}
 
 		// Verify tests used different databases
-		if run1.Database.Name == run2.Database.Name {
+		if run1.Database == run2.Database {
 			return fmt.Errorf("test %s used same database in both runs: %s",
-				testPath, run1.Database.Name)
+				testPath, run1.Database)
 		}
 
 		// Verify same status

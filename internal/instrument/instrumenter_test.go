@@ -26,17 +26,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;`
 
-	res, err := parser.ParseSQL(sql)
-	if err != nil {
-		t.Fatalf("ParseSQL() error = %v", err)
+	stmts := parser.ParseStatements(sql)
+	if len(stmts) == 0 {
+		t.Fatal("ParseStatements() returned no statements")
 	}
-	if len(res.Stmts) == 0 {
-		t.Fatal("ParseSQL() returned no statements")
-	}
-	stmt := &parser.Statement{
-		RawSQL: sql,
-		Node:   res.Stmts[0].GetStmt(),
-	}
+	stmt := stmts[0]
 
 	instrumentedSQL, coveragePoints := instrumentWithLexer(stmt, "test.sql")
 	if instrumentedSQL == "" {

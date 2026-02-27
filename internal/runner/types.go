@@ -10,13 +10,10 @@ import (
 // CoverageSignal is an alias for the shared type
 type CoverageSignal = types.CoverageSignal
 
-// TempDatabase is an alias for the shared type
-type TempDatabase = types.TempDatabase
-
 // TestRun represents a single test execution
 type TestRun struct {
 	Test         *discovery.DiscoveredFile
-	Database     *TempDatabase
+	Database     string // name of the temp database used for this test run
 	StartTime    time.Time
 	EndTime      time.Time
 	Status       TestStatus

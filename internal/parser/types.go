@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/cybertec-postgresql/pgcov/internal/discovery"
-	pgquery "github.com/pganalyze/pg_query_go/v6"
 )
 
 // ParseError represents SQL parsing failure
@@ -29,21 +28,22 @@ func NewParseError(file string, line, column int, message string) *ParseError {
 	}
 }
 
-// ParsedSQL represents a successfully parsed SQL file with AST
+// ParsedSQL represents a successfully parsed SQL file
 type ParsedSQL struct {
 	File       *discovery.DiscoveredFile
-	AST        *pgquery.ParseResult // From pg_query_go
 	Statements []*Statement
 }
 
 // Statement represents a single SQL statement with location information
 type Statement struct {
-	RawSQL    string           // Original SQL text
-	StartPos  int              // Byte offset in source file
-	StartLine int              // 1-indexed line number
-	EndLine   int              // 1-indexed line number
-	Type      StatementType    // Statement classification
-	Node      *pgquery.Node    // Parsed AST node
+	RawSQL    string        // Original SQL text
+	StartPos  int           // Byte offset in source file
+	StartLine int           // 1-indexed line number
+	EndLine   int           // 1-indexed line number
+	Type      StatementType // Statement classification
+	Language  string        // Language for function/procedure statements (e.g. "plpgsql", "sql")
+	Body      string        // Function/DO-block body text (unquoted)
+	BodyStart int           // Byte offset of body within RawSQL
 }
 
 // StatementType classifies SQL statements
@@ -55,6 +55,7 @@ const (
 	StmtProcedure               // CREATE PROCEDURE
 	StmtTrigger                 // CREATE TRIGGER
 	StmtView                    // CREATE VIEW
+	StmtDO                      // DO block
 	StmtOther                   // Any other statement
 )
 
@@ -69,6 +70,8 @@ func (st StatementType) String() string {
 		return "trigger"
 	case StmtView:
 		return "view"
+	case StmtDO:
+		return "do"
 	case StmtOther:
 		return "other"
 	default:

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/cybertec-postgresql/pgcov/internal/parser"
-	pgquery "github.com/pganalyze/pg_query_go/v6"
 )
 
 // GenerateCoverageInstruments instruments multiple parsed SQL files
@@ -69,11 +68,9 @@ func GenerateCoverageInstrument(parsed *parser.ParsedSQL) (*InstrumentedSQL, err
 func instrumentStatement(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
 	var locations []CoveragePoint
 
-	// For functions, determine the language from AST
-	if stmt.Type == parser.StmtFunction {
-		funcLang := getFunctionLanguage(stmt)
-
-		switch funcLang {
+	// For functions/procedures, determine the language from the parsed statement
+	if stmt.Type == parser.StmtFunction || stmt.Type == parser.StmtProcedure {
+		switch stmt.Language {
 		case "plpgsql":
 			instrumented, locs := instrumentWithLexer(stmt, filePath)
 			return instrumented, locs
@@ -87,8 +84,8 @@ func instrumentStatement(stmt *parser.Statement, filePath string) (string, []Cov
 		}
 	}
 
-	// For DO blocks, check if they're PL/pgSQL
-	if isDOBlock(stmt) {
+	// For DO blocks, instrument the body
+	if stmt.Type == parser.StmtDO {
 		instrumented, locs := instrumentWithLexer(stmt, filePath)
 		return instrumented, locs
 	}
@@ -101,66 +98,10 @@ func instrumentStatement(stmt *parser.Statement, filePath string) (string, []Cov
 	return stmt.RawSQL, locations
 }
 
-// getFunctionLanguage extracts the language from a CREATE FUNCTION statement using the AST node
-func getFunctionLanguage(stmt *parser.Statement) string {
-	if stmt.Node == nil {
-		return ""
-	}
-
-	if createFunc := stmt.Node.GetCreateFunctionStmt(); createFunc != nil {
-		// Look for the LANGUAGE option in the function definition
-		for _, opt := range createFunc.Options {
-			if opt.GetDefElem() != nil && opt.GetDefElem().Defname == "language" {
-				if langNode := opt.GetDefElem().Arg; langNode != nil {
-					if strNode := langNode.GetString_(); strNode != nil {
-						return strings.ToLower(strNode.Sval)
-					}
-				}
-			}
-		}
-	}
-
-	return ""
-}
-
-// isDOBlock checks if the statement is a DO block using the AST node
-func isDOBlock(stmt *parser.Statement) bool {
-	return stmt.Node != nil && stmt.Node.GetDoStmt() != nil
-}
-
-// extractFunctionBody extracts the function/DO-block body text from the AST node.
+// extractFunctionBody extracts the function/DO-block body text from the Statement.
 // Returns the body text or "" if not found.
 func extractFunctionBody(stmt *parser.Statement) string {
-	if stmt.Node == nil {
-		return ""
-	}
-
-	switch node := stmt.Node.Node; node.(type) {
-	case *pgquery.Node_CreateFunctionStmt:
-		createFunc := stmt.Node.GetCreateFunctionStmt()
-		for _, opt := range createFunc.Options {
-			if defElem := opt.GetDefElem(); defElem != nil && defElem.Defname == "as" {
-				if defElem.Arg != nil {
-					if strList := defElem.Arg.GetList(); strList != nil && len(strList.Items) > 0 {
-						if strNode := strList.Items[0].GetString_(); strNode != nil {
-							return strNode.Sval
-						}
-					} else if strNode := defElem.Arg.GetString_(); strNode != nil {
-						return strNode.Sval
-					}
-				}
-			}
-		}
-
-	case *pgquery.Node_DoStmt:
-		if doStmt := stmt.Node.GetDoStmt(); len(doStmt.Args) > 0 {
-			if strNode := doStmt.Args[0].GetString_(); strNode != nil {
-				return strNode.Sval
-			}
-		}
-	}
-
-	return ""
+	return stmt.Body
 }
 
 func instrumentWithLexer(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
@@ -188,18 +129,9 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, n
 		return stmt.RawSQL, nil
 	}
 
-	// Locate the body inside the original CREATE FUNCTION / DO statement text.
-	bodyIndexInOriginal := strings.Index(stmt.RawSQL, bodyContent)
-	if bodyIndexInOriginal == -1 {
-		normalizedBody := strings.TrimSpace(bodyContent)
-		for i := 0; i < len(stmt.RawSQL)-len(normalizedBody); i++ {
-			if strings.TrimSpace(stmt.RawSQL[i:i+len(normalizedBody)]) == normalizedBody {
-				bodyIndexInOriginal = i
-				break
-			}
-		}
-	}
-	if bodyIndexInOriginal == -1 {
+	// Use the pre-computed body offset within the statement text.
+	bodyIndexInOriginal := stmt.BodyStart
+	if bodyIndexInOriginal < 0 || bodyIndexInOriginal > len(stmt.RawSQL) {
 		return stmt.RawSQL, nil
 	}
 

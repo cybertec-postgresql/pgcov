@@ -8,6 +8,7 @@ import (
 
 	"github.com/cybertec-postgresql/pgcov/internal/testutil"
 	"github.com/cybertec-postgresql/pgcov/pkg/types"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // setupPostgresPool starts a PostgreSQL container and returns a Pool connected to it
@@ -39,32 +40,24 @@ func TestCreateTempDatabase(t *testing.T) {
 
 	ctx := context.Background()
 
-	tempDB, err := CreateTempDatabase(ctx, pool)
+	tempPool, err := CreateTempDatabase(ctx, pool)
 	if err != nil {
 		t.Fatalf("CreateTempDatabase() error = %v", err)
 	}
 
-	if tempDB == nil {
+	if tempPool == nil {
 		t.Fatal("CreateTempDatabase() returned nil")
 	}
 
+	dbName := tempPool.Config().ConnConfig.Database
+
 	// Verify database name format
-	if !strings.HasPrefix(tempDB.Name, "pgcov_test_") {
-		t.Errorf("CreateTempDatabase() name = %q, want prefix 'pgcov_test_'", tempDB.Name)
-	}
-
-	// Verify creation timestamp is recent
-	if time.Since(tempDB.CreatedAt) > 5*time.Second {
-		t.Errorf("CreateTempDatabase() CreatedAt = %v, want recent", tempDB.CreatedAt)
-	}
-
-	// Verify connection string contains database name
-	if !strings.Contains(tempDB.ConnectionString, tempDB.Name) {
-		t.Errorf("CreateTempDatabase() ConnectionString = %q doesn't contain database name", tempDB.ConnectionString)
+	if !strings.HasPrefix(dbName, "pgcov_test_") {
+		t.Errorf("CreateTempDatabase() name = %q, want prefix 'pgcov_test_'", dbName)
 	}
 
 	// Cleanup
-	if err := DestroyTempDatabase(ctx, pool, tempDB); err != nil {
+	if err := DestroyTempDatabase(ctx, pool, tempPool); err != nil {
 		t.Errorf("DestroyTempDatabase() error = %v", err)
 	}
 }
@@ -76,13 +69,14 @@ func TestDestroyTempDatabase(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a database to destroy
-	tempDB, err := CreateTempDatabase(ctx, pool)
+	tempPool, err := CreateTempDatabase(ctx, pool)
 	if err != nil {
 		t.Fatalf("CreateTempDatabase() error = %v", err)
 	}
+	dbName := tempPool.Config().ConnConfig.Database
 
 	// Destroy it
-	err = DestroyTempDatabase(ctx, pool, tempDB)
+	err = DestroyTempDatabase(ctx, pool, tempPool)
 	if err != nil {
 		t.Fatalf("DestroyTempDatabase() error = %v", err)
 	}
@@ -95,13 +89,13 @@ func TestDestroyTempDatabase(t *testing.T) {
 	defer conn.Release()
 
 	var exists bool
-	err = conn.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)", tempDB.Name).Scan(&exists)
+	err = conn.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)", dbName).Scan(&exists)
 	if err != nil {
 		t.Fatalf("failed to check database existence: %v", err)
 	}
 
 	if exists {
-		t.Errorf("DestroyTempDatabase() database %q still exists", tempDB.Name)
+		t.Errorf("DestroyTempDatabase() database %q still exists", dbName)
 	}
 }
 
@@ -125,27 +119,28 @@ func TestCreateTempDatabase_UniqueName(t *testing.T) {
 	ctx := context.Background()
 
 	// Create multiple databases
-	var databases []*types.TempDatabase
+	var pools []*pgxpool.Pool
 	for i := 0; i < 3; i++ {
-		tempDB, err := CreateTempDatabase(ctx, pool)
+		tempPool, err := CreateTempDatabase(ctx, pool)
 		if err != nil {
 			t.Fatalf("CreateTempDatabase() error = %v", err)
 		}
-		databases = append(databases, tempDB)
+		pools = append(pools, tempPool)
 	}
 
 	// Verify all names are unique
 	names := make(map[string]bool)
-	for _, db := range databases {
-		if names[db.Name] {
-			t.Errorf("CreateTempDatabase() produced duplicate name %q", db.Name)
+	for _, p := range pools {
+		name := p.Config().ConnConfig.Database
+		if names[name] {
+			t.Errorf("CreateTempDatabase() produced duplicate name %q", name)
 		}
-		names[db.Name] = true
+		names[name] = true
 	}
 
 	// Cleanup
-	for _, db := range databases {
-		if err := DestroyTempDatabase(ctx, pool, db); err != nil {
+	for _, p := range pools {
+		if err := DestroyTempDatabase(ctx, pool, p); err != nil {
 			t.Errorf("DestroyTempDatabase() error = %v", err)
 		}
 	}
@@ -159,26 +154,26 @@ func TestCreateTempDatabase_Concurrent(t *testing.T) {
 
 	// Create databases concurrently
 	numDBs := 5
-	results := make(chan *types.TempDatabase, numDBs)
+	results := make(chan *pgxpool.Pool, numDBs)
 	errors := make(chan error, numDBs)
 
 	for i := 0; i < numDBs; i++ {
 		go func() {
-			db, err := CreateTempDatabase(ctx, pool)
+			p, err := CreateTempDatabase(ctx, pool)
 			if err != nil {
 				errors <- err
 				return
 			}
-			results <- db
+			results <- p
 		}()
 	}
 
 	// Collect results
-	var databases []*types.TempDatabase
+	var pools []*pgxpool.Pool
 	for i := 0; i < numDBs; i++ {
 		select {
-		case db := <-results:
-			databases = append(databases, db)
+		case p := <-results:
+			pools = append(pools, p)
 		case err := <-errors:
 			t.Errorf("Concurrent CreateTempDatabase() error = %v", err)
 		case <-time.After(10 * time.Second):
@@ -188,64 +183,18 @@ func TestCreateTempDatabase_Concurrent(t *testing.T) {
 
 	// Verify all names are unique
 	names := make(map[string]bool)
-	for _, db := range databases {
-		if names[db.Name] {
-			t.Errorf("Concurrent CreateTempDatabase() produced duplicate name %q", db.Name)
+	for _, p := range pools {
+		name := p.Config().ConnConfig.Database
+		if names[name] {
+			t.Errorf("Concurrent CreateTempDatabase() produced duplicate name %q", name)
 		}
-		names[db.Name] = true
+		names[name] = true
 	}
 
 	// Cleanup
-	for _, db := range databases {
-		if err := DestroyTempDatabase(ctx, pool, db); err != nil {
+	for _, p := range pools {
+		if err := DestroyTempDatabase(ctx, pool, p); err != nil {
 			t.Errorf("DestroyTempDatabase() error = %v", err)
-		}
-	}
-}
-
-func TestCleanupStaleTempDatabases(t *testing.T) {
-	pool, cleanup := setupPostgresPool(t)
-	defer cleanup()
-
-	ctx := context.Background()
-
-	// Create some temp databases
-	var databases []*types.TempDatabase
-	for i := 0; i < 3; i++ {
-		tempDB, err := CreateTempDatabase(ctx, pool)
-		if err != nil {
-			t.Fatalf("CreateTempDatabase() error = %v", err)
-		}
-		databases = append(databases, tempDB)
-	}
-
-	// Cleanup all stale databases (older than 0 seconds = all)
-	cleaned, err := CleanupStaleTempDatabases(ctx, pool, 0)
-	if err != nil {
-		t.Logf("CleanupStaleTempDatabases() warning: %v", err)
-	}
-
-	// Should have cleaned at least the ones we created
-	if len(cleaned) < len(databases) {
-		t.Logf("CleanupStaleTempDatabases() cleaned %d databases, created %d", len(cleaned), len(databases))
-	}
-
-	// Verify databases are gone
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		t.Fatalf("failed to acquire connection: %v", err)
-	}
-	defer conn.Release()
-
-	for _, db := range databases {
-		var exists bool
-		err = conn.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)", db.Name).Scan(&exists)
-		if err != nil {
-			t.Fatalf("failed to check database existence: %v", err)
-		}
-
-		if exists {
-			t.Errorf("CleanupStaleTempDatabases() database %q still exists", db.Name)
 		}
 	}
 }
@@ -257,10 +206,11 @@ func TestTempDatabase_Lifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// Create
-	tempDB, err := CreateTempDatabase(ctx, pool)
+	tempPool, err := CreateTempDatabase(ctx, pool)
 	if err != nil {
 		t.Fatalf("CreateTempDatabase() error = %v", err)
 	}
+	dbName := tempPool.Config().ConnConfig.Database
 
 	// Verify exists
 	conn, err := pool.Acquire(ctx)
@@ -270,27 +220,27 @@ func TestTempDatabase_Lifecycle(t *testing.T) {
 	defer conn.Release()
 
 	var exists bool
-	err = conn.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)", tempDB.Name).Scan(&exists)
+	err = conn.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)", dbName).Scan(&exists)
 	if err != nil {
 		t.Fatalf("failed to check database existence: %v", err)
 	}
 
 	if !exists {
-		t.Errorf("Database %q does not exist after creation", tempDB.Name)
+		t.Errorf("Database %q does not exist after creation", dbName)
 	}
 
 	// Destroy
-	if err := DestroyTempDatabase(ctx, pool, tempDB); err != nil {
+	if err := DestroyTempDatabase(ctx, pool, tempPool); err != nil {
 		t.Fatalf("DestroyTempDatabase() error = %v", err)
 	}
 
 	// Verify does not exist
-	err = conn.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)", tempDB.Name).Scan(&exists)
+	err = conn.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)", dbName).Scan(&exists)
 	if err != nil {
 		t.Fatalf("failed to check database existence: %v", err)
 	}
 
 	if exists {
-		t.Errorf("Database %q still exists after destruction", tempDB.Name)
+		t.Errorf("Database %q still exists after destruction", dbName)
 	}
 }
