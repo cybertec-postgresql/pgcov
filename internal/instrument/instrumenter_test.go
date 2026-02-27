@@ -32,7 +32,7 @@ $$ LANGUAGE plpgsql;`
 	}
 	stmt := stmts[0]
 
-	instrumentedSQL, coveragePoints := instrumentWithLexer(stmt, "test.sql")
+	instrumentedSQL, coveragePoints := instrumentBody(stmt, "test.sql", true, "PERFORM")
 	if instrumentedSQL == "" {
 		t.Error("instrumentWithLexer() returned empty instrumented SQL")
 	}

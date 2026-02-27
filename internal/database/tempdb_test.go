@@ -120,7 +120,7 @@ func TestCreateTempDatabase_UniqueName(t *testing.T) {
 
 	// Create multiple databases
 	var pools []*pgxpool.Pool
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		tempPool, err := CreateTempDatabase(ctx, pool)
 		if err != nil {
 			t.Fatalf("CreateTempDatabase() error = %v", err)
@@ -157,7 +157,7 @@ func TestCreateTempDatabase_Concurrent(t *testing.T) {
 	results := make(chan *pgxpool.Pool, numDBs)
 	errors := make(chan error, numDBs)
 
-	for i := 0; i < numDBs; i++ {
+	for range numDBs {
 		go func() {
 			p, err := CreateTempDatabase(ctx, pool)
 			if err != nil {
@@ -170,7 +170,7 @@ func TestCreateTempDatabase_Concurrent(t *testing.T) {
 
 	// Collect results
 	var pools []*pgxpool.Pool
-	for i := 0; i < numDBs; i++ {
+	for range numDBs {
 		select {
 		case p := <-results:
 			pools = append(pools, p)

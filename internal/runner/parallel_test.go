@@ -192,7 +192,7 @@ func TestParallelExecutionAccuracy(t *testing.T) {
 	const runs = 3
 	var coveragePercentages []float64
 
-	for i := 0; i < runs; i++ {
+	for i := range runs {
 		executor := runner.NewExecutor(pool, config.Timeout, config.Verbose)
 		workerPool := runner.NewWorkerPool(executor, config.Parallelism, config.Verbose)
 		testRuns, err := workerPool.ExecuteParallel(ctx, testFiles, instrumentedSources)

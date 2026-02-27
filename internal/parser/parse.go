@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/cybertec-postgresql/pgcov/internal/discovery"
+	"github.com/pashagolub/pglex"
 )
 
 // Parse parses a SQL file and returns ParsedSQL with statements
@@ -41,18 +42,36 @@ func ParseStatements(sql string) []*Statement {
 	return splitAndClassify(sql)
 }
 
+// calculateLineNumber converts a byte offset to a 1-indexed line number
+func calculateLineNumber(sql string, offset int) int {
+	if offset < 0 {
+		return 1
+	}
+	if offset > len(sql) {
+		offset = len(sql)
+	}
+
+	lineNum := 1
+	for i := 0; i < offset && i < len(sql); i++ {
+		if sql[i] == '\n' {
+			lineNum++
+		}
+	}
+	return lineNum
+}
+
 // splitAndClassify splits SQL text into statements using the scanner and
 // classifies each one by inspecting its leading tokens.
 func splitAndClassify(sql string) []*Statement {
-	tokenGroups := SplitStatements(sql)
+	tokenGroups := pglex.SplitStatements(sql)
 	var statements []*Statement
 
 	for _, toks := range tokenGroups {
 		// Filter to non-comment, non-whitespace tokens for classification,
 		// but keep all tokens to compute raw SQL span.
-		var significant []Token
+		var significant []pglex.Token
 		for _, t := range toks {
-			if t.Type != Comment {
+			if t.Type != pglex.Comment {
 				significant = append(significant, t)
 			}
 		}
@@ -98,7 +117,7 @@ func splitAndClassify(sql string) []*Statement {
 // classifyTokens determines the statement type from its leading tokens.
 // It scans for CREATE [OR REPLACE] FUNCTION/PROCEDURE/TRIGGER/VIEW patterns
 // and DO blocks.
-func classifyTokens(tokens []Token) StatementType {
+func classifyTokens(tokens []pglex.Token) StatementType {
 	if len(tokens) == 0 {
 		return StmtUnknown
 	}
@@ -142,12 +161,12 @@ func classifyTokens(tokens []Token) StatementType {
 
 // isIdent checks whether a token is an identifier matching the given word
 // (case-insensitive). Both Ident tokens and keyword tokens can match.
-func isIdent(tok Token, word string) bool {
+func isIdent(tok pglex.Token, word string) bool {
 	return strings.EqualFold(tok.Text, word)
 }
 
 // extractLanguage finds the LANGUAGE clause in a CREATE FUNCTION/PROCEDURE statement.
-func extractLanguage(tokens []Token) string {
+func extractLanguage(tokens []pglex.Token) string {
 	for i := 0; i < len(tokens)-1; i++ {
 		if isIdent(tokens[i], "LANGUAGE") {
 			// The next token is the language name
@@ -159,7 +178,7 @@ func extractLanguage(tokens []Token) string {
 
 // extractDOLanguage finds the LANGUAGE clause in a DO block.
 // DO blocks can have LANGUAGE before or after the body string.
-func extractDOLanguage(tokens []Token) string {
+func extractDOLanguage(tokens []pglex.Token) string {
 	for i := 0; i < len(tokens)-1; i++ {
 		if isIdent(tokens[i], "LANGUAGE") {
 			return strings.ToLower(tokens[i+1].Text)
@@ -170,11 +189,11 @@ func extractDOLanguage(tokens []Token) string {
 
 // extractBody finds the AS clause's string literal in a CREATE FUNCTION/PROCEDURE
 // and returns (bodyContent, bodyOffsetInRawSQL).
-func extractBody(tokens []Token, stmtStartPos int) (string, int) {
+func extractBody(tokens []pglex.Token, stmtStartPos int) (string, int) {
 	for i := 0; i < len(tokens)-1; i++ {
 		if isIdent(tokens[i], "AS") {
 			next := tokens[i+1]
-			if next.Type == SConst {
+			if next.Type == pglex.SConst {
 				body := unquoteString(next.Text)
 				// bodyStart is the offset within rawSQL where the body content begins
 				bodyOffset := next.Pos - stmtStartPos + bodyDelimiterLen(next.Text)
@@ -187,12 +206,12 @@ func extractBody(tokens []Token, stmtStartPos int) (string, int) {
 
 // extractDOBody finds the body string in a DO block.
 // DO $$ body $$ or DO 'body'
-func extractDOBody(tokens []Token, stmtStartPos int) (string, int) {
+func extractDOBody(tokens []pglex.Token, stmtStartPos int) (string, int) {
 	for i := range tokens {
 		if isIdent(tokens[i], "DO") {
 			// The body is the next SConst after DO (could be DO $$ ... $$ or DO 'body')
 			for j := i + 1; j < len(tokens); j++ {
-				if tokens[j].Type == SConst {
+				if tokens[j].Type == pglex.SConst {
 					body := unquoteString(tokens[j].Text)
 					bodyOffset := tokens[j].Pos - stmtStartPos + bodyDelimiterLen(tokens[j].Text)
 					return body, bodyOffset

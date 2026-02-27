@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/cybertec-postgresql/pgcov/internal/parser"
+	"github.com/pashagolub/pglex"
 )
 
 // GenerateCoverageInstruments instruments multiple parsed SQL files
@@ -69,13 +70,14 @@ func instrumentStatement(stmt *parser.Statement, filePath string) (string, []Cov
 	var locations []CoveragePoint
 
 	// For functions/procedures, determine the language from the parsed statement
-	if stmt.Type == parser.StmtFunction || stmt.Type == parser.StmtProcedure {
+	switch stmt.Type {
+	case parser.StmtFunction, parser.StmtProcedure, parser.StmtDO:
 		switch stmt.Language {
 		case "plpgsql":
-			instrumented, locs := instrumentWithLexer(stmt, filePath)
+			instrumented, locs := instrumentBody(stmt, filePath, true, "PERFORM")
 			return instrumented, locs
 		case "sql":
-			instrumented, locs := instrumentSQLFunction(stmt, filePath)
+			instrumented, locs := instrumentBody(stmt, filePath, false, "SELECT")
 			return instrumented, locs
 		default:
 			// Unknown language, mark as implicitly covered
@@ -84,35 +86,12 @@ func instrumentStatement(stmt *parser.Statement, filePath string) (string, []Cov
 		}
 	}
 
-	// For DO blocks, instrument the body
-	if stmt.Type == parser.StmtDO {
-		instrumented, locs := instrumentWithLexer(stmt, filePath)
-		return instrumented, locs
-	}
-
 	// For non-function statements (DDL, DML), mark all non-comment lines as covered
 	// These will be automatically marked as covered if the file executes without errors
 	locations = markStatementLinesAsCovered(stmt, filePath)
 
 	// Return original SQL without instrumentation - DDL/DML are implicitly covered on success
 	return stmt.RawSQL, locations
-}
-
-// extractFunctionBody extracts the function/DO-block body text from the Statement.
-// Returns the body text or "" if not found.
-func extractFunctionBody(stmt *parser.Statement) string {
-	return stmt.Body
-}
-
-func instrumentWithLexer(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
-	return instrumentBody(stmt, filePath, true, "PERFORM")
-}
-
-// instrumentSQLFunction instruments a SQL-language function.
-// SQL functions have no DECLARE/BEGIN block, so we scan the body immediately.
-// Since PERFORM is not valid in SQL functions, we use SELECT pg_notify(...) instead.
-func instrumentSQLFunction(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
-	return instrumentBody(stmt, filePath, false, "SELECT")
 }
 
 // instrumentBody scans the function body token-by-token using the streaming
@@ -124,7 +103,7 @@ func instrumentSQLFunction(stmt *parser.Statement, filePath string) (string, []C
 // For SQL functions (skipToBegin=false), instrumentation starts immediately.
 // notifyCmd is "PERFORM" for PL/pgSQL or "SELECT" for SQL functions.
 func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, notifyCmd string) (string, []CoveragePoint) {
-	bodyContent := extractFunctionBody(stmt)
+	bodyContent := stmt.Body
 	if bodyContent == "" {
 		return stmt.RawSQL, nil
 	}
@@ -135,7 +114,7 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, n
 		return stmt.RawSQL, nil
 	}
 
-	sc := parser.NewScanner(bodyContent)
+	sc := pglex.NewScanner(bodyContent)
 
 	var locations []CoveragePoint
 	var instrumentedBody strings.Builder
@@ -174,7 +153,7 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, n
 
 		// Determine indentation from the first non-empty line.
 		indent := ""
-		for _, line := range strings.Split(segText, "\n") {
+		for line := range strings.SplitSeq(segText, "\n") {
 			if strings.TrimSpace(line) != "" {
 				indent = getIndentation(line)
 				break
@@ -191,24 +170,24 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, n
 	// Stream tokens one at a time – mirrors SplitStatements style.
 	for {
 		tok := sc.Scan()
-		if tok.Type == parser.EOF {
+		if tok.Type == pglex.EOF {
 			break
 		}
 
 		// Skip everything before the first BEGIN in PL/pgSQL bodies.
 		if !pastBegin {
-			if tok.Type == parser.KBegin {
+			if tok.Type == pglex.KBegin {
 				pastBegin = true
 			}
 			continue
 		}
 
 		// Comments are not executable content.
-		if tok.Type == parser.Comment {
+		if tok.Type == pglex.Comment {
 			continue
 		}
 
-		if tok.Type == parser.TokenType(';') {
+		if tok.Type == pglex.TokenType(';') {
 			if hasContent && segStart >= 0 {
 				emitSegment(tok.Pos)
 			}
@@ -247,22 +226,22 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, n
 // The logic is an exclusion list: everything is considered executable except
 // known structural markers (BEGIN, END, LOOP, DECLARE, EXCEPTION).
 func isExecutableSegment(segmentContent string) bool {
-	sc := parser.NewScanner(segmentContent)
+	sc := pglex.NewScanner(segmentContent)
 
 	// Find the first non-comment token.
-	var first parser.Token
+	var first pglex.Token
 	for {
 		first = sc.Scan()
-		if first.Type == parser.EOF {
+		if first.Type == pglex.EOF {
 			return false // empty or comments-only
 		}
-		if first.Type != parser.Comment {
+		if first.Type != pglex.Comment {
 			break
 		}
 	}
 
 	switch first.Type {
-	case parser.KBegin, parser.KEnd, parser.KLoop, parser.KDeclare, parser.KException:
+	case pglex.KBegin, pglex.KEnd, pglex.KLoop, pglex.KDeclare, pglex.KException:
 		// Pure block openers/closers and declaration sections — not useful code.
 		return false
 	}

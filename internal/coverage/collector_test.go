@@ -48,7 +48,7 @@ func TestCollector_AddSignal_Multiple(t *testing.T) {
 		Timestamp: time.Now(),
 	}
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		err := c.AddSignal(signal)
 		if err != nil {
 			t.Fatalf("AddSignal() error = %v", err)
@@ -147,18 +147,16 @@ func TestCollector_ThreadSafe(t *testing.T) {
 	numGoroutines := 10
 	signalsPerGoroutine := 100
 
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < signalsPerGoroutine; j++ {
+	for range numGoroutines {
+		wg.Go(func() {
+			for range signalsPerGoroutine {
 				signal := runner.CoverageSignal{
 					SignalID:  "test.sql:100:50",
 					Timestamp: time.Now(),
 				}
 				_ = c.AddSignal(signal)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

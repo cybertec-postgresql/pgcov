@@ -4,6 +4,7 @@ go 1.25.5
 
 require (
 	github.com/jackc/pgx/v5 v5.8.0
+	github.com/pashagolub/pglex v0.0.0-20260227194109-d3a3947d9c13
 	github.com/testcontainers/testcontainers-go v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.40.0
 	github.com/urfave/cli/v3 v3.6.1

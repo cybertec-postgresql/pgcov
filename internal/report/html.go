@@ -223,10 +223,7 @@ func (r *HTMLReporter) resolveOverlappingRanges(ranges []positionRange) []positi
 		}
 
 		// Adjust start if it overlaps with previous coverage
-		adjustedStart := rng.startPos
-		if adjustedStart < currentEnd {
-			adjustedStart = currentEnd
-		}
+		adjustedStart := max(rng.startPos, currentEnd)
 
 		// Calculate adjusted length
 		adjustedLength := rng.startPos + rng.length - adjustedStart
