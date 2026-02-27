@@ -16,13 +16,6 @@ type Coverage struct {
 // PositionHits represents position hit counts for a single file
 type PositionHits map[string]int // Key: "startPos:length", Value: hit count
 
-// BranchCoverage represents coverage data for a single branch
-type BranchCoverage struct {
-	BranchID string // e.g., "44:if_true"
-	HitCount int    // Number of times branch taken
-	Covered  bool   // true if HitCount > 0
-}
-
 // NewCoverage creates a new Coverage instance
 func NewCoverage() *Coverage {
 	return &Coverage{
@@ -42,13 +35,6 @@ func (c *Coverage) AddPosition(file string, startPos int, length int, hitCount i
 	}
 	posKey := formatPositionKey(startPos, length)
 	c.Positions[file][posKey] = hitCount
-}
-
-// AddBranch adds or updates branch coverage data (placeholder for future)
-func (c *Coverage) AddBranch(_ string, branchID string, hitCount int) {
-	// TODO: Implement branch coverage tracking
-	_ = branchID
-	_ = hitCount
 }
 
 // PositionCoveragePercent calculates position coverage percentage for a file

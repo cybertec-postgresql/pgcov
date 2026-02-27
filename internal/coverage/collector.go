@@ -54,24 +54,17 @@ func (c *Collector) AddSignal(signal runner.CoverageSignal) error {
 // addSignalUnsafe adds a signal without locking (internal use when lock is already held)
 func (c *Collector) addSignalUnsafe(signal runner.CoverageSignal) error {
 	// Parse signal ID to extract file, startPos, length, and branch
-	file, startPos, length, branch, err := instrument.ParseSignalID(signal.SignalID)
+	file, startPos, length, err := instrument.ParseSignalID(signal.SignalID)
 	if err != nil {
 		return fmt.Errorf("invalid signal ID: %w", err)
 	}
 
-	// Add position-based coverage only
-	if branch == "" {
-		// Position coverage - increment hit count
-		posKey := fmt.Sprintf("%d:%d", startPos, length)
-		if existingCount, exists := c.coverage.Positions[file][posKey]; exists {
-			c.coverage.AddPosition(file, startPos, length, existingCount+1)
-		} else {
-			c.coverage.AddPosition(file, startPos, length, 1)
-		}
+	// Position coverage - increment hit count
+	posKey := fmt.Sprintf("%d:%d", startPos, length)
+	if existingCount, exists := c.coverage.Positions[file][posKey]; exists {
+		c.coverage.AddPosition(file, startPos, length, existingCount+1)
 	} else {
-		// Branch coverage (placeholder for future)
-		branchKey := fmt.Sprintf("%d:%d:%s", startPos, length, branch)
-		c.coverage.AddBranch(file, branchKey, 1)
+		c.coverage.AddPosition(file, startPos, length, 1)
 	}
 
 	return nil

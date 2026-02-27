@@ -47,7 +47,7 @@ func BranchPositionKey(file string, startPos int, length int, branch string) str
 }
 
 // ParseSignalID parses a signal ID into file, startPos, length, and optional branch
-func ParseSignalID(signalID string) (file string, startPos int, length int, branch string, err error) {
+func ParseSignalID(signalID string) (file string, startPos int, length int, err error) {
 	// Signal format: file:startPos:length or file:startPos:length:branch
 	// Note: file path may contain colons on Windows (C:\path\to\file.sql)
 
@@ -64,7 +64,7 @@ func ParseSignalID(signalID string) (file string, startPos int, length int, bran
 	}
 
 	if len(colons) < 2 {
-		return "", 0, 0, "", fmt.Errorf("invalid signal ID format (expected at least 3 parts): %s", signalID)
+		return "", 0, 0, fmt.Errorf("invalid signal ID format (expected at least 3 parts): %s", signalID)
 	}
 
 	// Check if there's a branch (four parts)
@@ -80,7 +80,6 @@ func ParseSignalID(signalID string) (file string, startPos int, length int, bran
 		file = signalID[:thirdLastColon]
 		startPosStr := signalID[thirdLastColon+1 : secondLastColon]
 		lengthStr := signalID[secondLastColon+1 : lastColon]
-		possibleBranch := signalID[lastColon+1:]
 
 		// Try to parse startPos and length
 		var startPosVal, lengthVal int
@@ -90,12 +89,12 @@ func ParseSignalID(signalID string) (file string, startPos int, length int, bran
 		if parseErr1 == nil && parseErr2 == nil {
 			// Successfully parsed as file:startPos:length:branch
 			if startPosVal < 0 {
-				return "", 0, 0, "", fmt.Errorf("start position must be non-negative, got %d", startPosVal)
+				return "", 0, 0, fmt.Errorf("start position must be non-negative, got %d", startPosVal)
 			}
 			if lengthVal < 0 {
-				return "", 0, 0, "", fmt.Errorf("length must be non-negative, got %d", lengthVal)
+				return "", 0, 0, fmt.Errorf("length must be non-negative, got %d", lengthVal)
 			}
-			return file, startPosVal, lengthVal, possibleBranch, nil
+			return file, startPosVal, lengthVal, nil
 		}
 	}
 
@@ -111,22 +110,22 @@ func ParseSignalID(signalID string) (file string, startPos int, length int, bran
 	var parseErr error
 	startPos, parseErr = parseNumber(startPosStr)
 	if parseErr != nil {
-		return "", 0, 0, "", fmt.Errorf("invalid start position in signal ID %s: %w", signalID, parseErr)
+		return "", 0, 0, fmt.Errorf("invalid start position in signal ID %s: %w", signalID, parseErr)
 	}
 
 	length, parseErr = parseNumber(lengthStr)
 	if parseErr != nil {
-		return "", 0, 0, "", fmt.Errorf("invalid length in signal ID %s: %w", signalID, parseErr)
+		return "", 0, 0, fmt.Errorf("invalid length in signal ID %s: %w", signalID, parseErr)
 	}
 
 	if startPos < 0 {
-		return "", 0, 0, "", fmt.Errorf("start position must be non-negative, got %d", startPos)
+		return "", 0, 0, fmt.Errorf("start position must be non-negative, got %d", startPos)
 	}
 	if length < 0 {
-		return "", 0, 0, "", fmt.Errorf("length must be non-negative, got %d", length)
+		return "", 0, 0, fmt.Errorf("length must be non-negative, got %d", length)
 	}
 
-	return file, startPos, length, "", nil
+	return file, startPos, length, nil
 }
 
 // parseNumber safely parses a number string
