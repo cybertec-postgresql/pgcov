@@ -39,10 +39,10 @@ pgcov/
 │   ├── database/          # PostgreSQL connection & temp DB management
 │   ├── discovery/         # Test/source file discovery
 │   ├── instrument/        # SQL/PL/pgSQL instrumentation
-│   ├── parser/            # SQL parsing (pg_query_go wrapper)
+│   ├── parser/            # SQL token scanning (pglex-based, not pg_query_go)
 │   ├── report/            # Report formatters (JSON, LCOV, HTML)
-│   ├── runner/            # Test execution & parallelization
-│   └── logger/            # Logging utilities
+│   └── runner/            # Test execution & parallelization
+├── internal/testutil/     # Shared test helpers (Docker-based Postgres)
 ├── testdata/              # Integration test fixtures
 ├── examples/              # Usage examples
 ```
@@ -108,7 +108,7 @@ pgcov/
 ### Key Technologies
 
 - **CLI Framework**: `urfave/cli/v3` (subcommands, flags, env var binding)
-- **SQL Parser**: `pganalyze/pg_query_go/v6` (official PostgreSQL parser)
+- **SQL Parser**: `pashagolub/pglex` (token-level scanner — NOT pg_query_go/AST-based)
 - **PostgreSQL Driver**: `jackc/pgx/v5` (native protocol, LISTEN/NOTIFY)
 
 ### Core Workflows
@@ -118,8 +118,8 @@ pgcov/
 ```
 1. Discovery: Find *_test.sql files recursively
 2. Source Discovery: Find co-located .sql files (same directory)
-3. Parsing: Parse source files with pg_query_go
-4. Instrumentation: Rewrite AST to inject NOTIFY calls
+3. Parsing: Token-split source files with pglex into `[]*Statement`
+4. Instrumentation: Rewrite function bodies to inject NOTIFY calls at statement boundaries
 5. Temp DB Creation: CREATE DATABASE pgcov_test_{timestamp}_{random}
 6. Deployment: Load instrumented sources into temp DB
 7. Execution: Run test file in temp DB
@@ -132,9 +132,11 @@ pgcov/
 
 ```
 Channel: coverage_signal
-Payload: file:line[:branch]
-Example: src/auth.sql:42 or src/auth.sql:42:branch_1
+Payload: file:startByteOffset:byteLength
+Example: src/auth.sql:128:42
 ```
+
+See `instrument.ParseSignalID` for the canonical parser. Positions are byte-offsets into the source file, not line numbers.
 
 #### Temporary Database Naming
 
@@ -239,12 +241,12 @@ if err != nil {
 
 ### Logging
 
+There is **no** `internal/logger` package. Use `fmt.Printf` guarded by a `verbose` flag:
+
 ```go
-// Use internal/logger package
-logger := logger.New(verbose)
-logger.Info("Discovering tests in %s", path)
-logger.Debug("Found test file: %s", filePath)
-logger.Error("Failed to parse: %v", err)
+if verbose {
+    fmt.Printf("Discovering tests in %s\n", path)
+}
 ```
 
 ### Naming Conventions
@@ -604,7 +606,7 @@ ALTER USER testuser CREATEDB;
 
 **Solution**:
 
-1. Check file with `pg_query_go` directly
+1. Check file syntax using pglex or a local PostgreSQL instance
 2. Verify PostgreSQL version compatibility
 3. Enable verbose logging: `pgcov run --verbose`
 
@@ -622,7 +624,7 @@ pgcov run --timeout=60s ./tests/
 
 ### External Resources
 
-- [pg_query_go Documentation](https://pkg.go.dev/github.com/pganalyze/pg_query_go/v6)
+- [pglex Documentation](https://github.com/pashagolub/pglex)
 - [pgx Driver Documentation](https://pkg.go.dev/github.com/jackc/pgx/v5)
 - [PostgreSQL SQL Syntax](https://www.postgresql.org/docs/current/sql.html)
 - [LCOV Format Specification](https://linux.die.net/man/1/geninfo)
@@ -634,7 +636,7 @@ pgcov run --timeout=60s ./tests/
 - `internal/database`: PostgreSQL connection management
 - `internal/discovery`: Test/source file discovery
 - `internal/instrument`: SQL instrumentation via AST rewriting
-- `internal/parser`: SQL parsing wrapper (pg_query_go)
+- `internal/parser`: SQL token scanner (pglex)
 - `internal/report`: Coverage report formatters
 - `internal/runner`: Test execution and parallelization
 
