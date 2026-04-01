@@ -1,0 +1,17 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "provider": {
+        "cybertec-ai-minimax": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "Cybertec AI MiniMax",
+            "options": {
+                "baseURL": "https://ai.cybertec.at/v1"
+            },
+            "models": {
+                "MiniMaxAI/MiniMax-M2.5": {
+                    "name": "MiniMax"
+                }
+            }
+        }
+    }
+}
