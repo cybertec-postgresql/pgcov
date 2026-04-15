@@ -126,8 +126,13 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, n
 	segStart := -1
 
 	// emitSegment checks the segment between segStart..segEnd for
-	// executability and, if it qualifies, writes the gap + notify + segment
-	// into instrumentedBody.
+	// executability and, if it qualifies, writes the gap + signal + segment
+	// (or segment + signal) into instrumentedBody.
+	//
+	// For terminal statements (RETURN, RAISE EXCEPTION) the signal is
+	// emitted *before* the statement because nothing executes after them.
+	// For all other statements the signal is emitted *after* the statement
+	// so that coverage is recorded only on successful execution (B1 fix).
 	emitSegment := func(segEnd int) {
 		segText := bodyContent[segStart:segEnd]
 		if !isExecutableSegment(segText) {
@@ -160,11 +165,29 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, n
 			}
 		}
 
-		// Write notify call, then the original segment text.
-		fmt.Fprintf(&instrumentedBody, "%s%s pg_notify('pgcov', '%s');\n",
+		notifyCall := fmt.Sprintf("%s%s pg_notify('pgcov', '%s');",
 			indent, notifyCmd, strings.ReplaceAll(cp.SignalID, "'", "''"))
-		instrumentedBody.WriteString(segText)
-		lastWrittenPos = segEnd
+
+		if isTerminalSegment(segText) {
+			// Terminal statements (RETURN, RAISE EXCEPTION) exit the
+			// current scope — the signal must fire before the statement.
+			fmt.Fprintf(&instrumentedBody, "%s\n", notifyCall)
+			instrumentedBody.WriteString(segText)
+			lastWrittenPos = segEnd
+		} else {
+			// Non-terminal statements: emit the signal after the
+			// statement so coverage reflects successful execution.
+			instrumentedBody.WriteString(segText)
+			// Consume the semicolon that terminates this segment so
+			// the notify call sits between statement and next gap.
+			if segEnd < len(bodyContent) && bodyContent[segEnd] == ';' {
+				instrumentedBody.WriteByte(';')
+				lastWrittenPos = segEnd + 1
+			} else {
+				lastWrittenPos = segEnd
+			}
+			fmt.Fprintf(&instrumentedBody, "\n%s", notifyCall)
+		}
 	}
 
 	// Stream tokens one at a time – mirrors SplitStatements style.
@@ -249,6 +272,51 @@ func isExecutableSegment(segmentContent string) bool {
 	// Any other leading token (identifier, keyword, operator, etc.)
 	// indicates an executable statement.
 	return true
+}
+
+// isTerminalSegment checks whether a segment starts with a terminal statement
+// (RETURN or RAISE EXCEPTION / bare RAISE) that exits the current scope.
+// NOTIFY calls placed after such statements would be unreachable.
+// Non-fatal RAISE levels (NOTICE, WARNING, INFO, LOG, DEBUG) are not terminal.
+func isTerminalSegment(segmentContent string) bool {
+	sc := pglex.NewScanner(segmentContent)
+
+	// Find the first non-comment token.
+	var first pglex.Token
+	for {
+		first = sc.Scan()
+		if first.Type == pglex.EOF {
+			return false
+		}
+		if first.Type != pglex.Comment {
+			break
+		}
+	}
+
+	if first.Type == pglex.KReturn {
+		return true
+	}
+
+	if first.Type == pglex.KRaise {
+		// RAISE is terminal unless followed by a non-fatal level.
+		for {
+			tok := sc.Scan()
+			if tok.Type == pglex.EOF {
+				return true // bare RAISE; — re-raise in exception handler
+			}
+			if tok.Type == pglex.Comment {
+				continue
+			}
+			switch tok.Type {
+			case pglex.KNotice, pglex.KWarning, pglex.KInfo, pglex.KLog, pglex.KDebug:
+				return false
+			default:
+				return true // RAISE EXCEPTION, RAISE 'message', etc.
+			}
+		}
+	}
+
+	return false
 }
 
 // getIndentation returns the leading whitespace of a line.

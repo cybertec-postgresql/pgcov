@@ -103,7 +103,8 @@ $$ LANGUAGE plpgsql;`
 		}
 	}
 
-	// Verify PERFORM statements are injected before the executable lines
+	// Verify PERFORM statements are injected after the executable lines (coverage-after-execute),
+	// except for terminal statements (RETURN) which keep PERFORM before.
 	// Note: After instrumentation, line numbers shift due to inserted PERFORM statements
 	// We just verify that PERFORM statements exist for each coverage point
 	for _, cp := range instrumented.Locations {
@@ -235,4 +236,134 @@ $$ LANGUAGE plpgsql;`
 		t.Fatal("Instrument() returned nil")
 	}
 	t.Logf("Coverage points: %d (may be 0 for malformed SQL)", len(instrumented.Locations))
+}
+
+func TestIsTerminalSegment(t *testing.T) {
+	tests := []struct {
+		name     string
+		segment  string
+		terminal bool
+	}{
+		{"RETURN value", "RETURN a + b", true},
+		{"RETURN bare", "RETURN", true},
+		{"RAISE EXCEPTION", "RAISE EXCEPTION 'error'", true},
+		{"RAISE with string (default EXCEPTION)", "RAISE 'something went wrong'", true},
+		{"RAISE bare re-raise", "RAISE", true},
+		{"RAISE NOTICE", "RAISE NOTICE 'hello'", false},
+		{"RAISE WARNING", "RAISE WARNING 'warn'", false},
+		{"RAISE INFO", "RAISE INFO 'info'", false},
+		{"RAISE LOG", "RAISE LOG 'log'", false},
+		{"RAISE DEBUG", "RAISE DEBUG 'debug'", false},
+		{"assignment", "discount_rate := 0.20", false},
+		{"IF block", "IF x > 0 THEN\n    y := 1", false},
+		{"PERFORM", "PERFORM some_function()", false},
+		{"SELECT", "SELECT 1 INTO result", false},
+		{"comment then RETURN", "-- comment\nRETURN 42", true},
+		{"comment then assignment", "-- comment\nx := 1", false},
+		{"empty", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isTerminalSegment(tt.segment)
+			if got != tt.terminal {
+				t.Errorf("isTerminalSegment(%q) = %v, want %v", tt.segment, got, tt.terminal)
+			}
+		})
+	}
+}
+
+func TestInstrumentBody_CoverageAfterExecute(t *testing.T) {
+	// Verify that for non-terminal statements, NOTIFY comes after the statement,
+	// and for RETURN, NOTIFY comes before.
+	sql := `CREATE OR REPLACE FUNCTION example(x INT)
+RETURNS INT AS $$
+BEGIN
+    x := x + 1;
+    RETURN x;
+END;
+$$ LANGUAGE plpgsql;`
+
+	stmts := parser.ParseStatements(sql)
+	if len(stmts) == 0 {
+		t.Fatal("ParseStatements() returned no statements")
+	}
+
+	instrumentedSQL, coveragePoints := instrumentBody(stmts[0], "test.sql", true, "PERFORM")
+	if len(coveragePoints) != 2 {
+		t.Fatalf("expected 2 coverage points, got %d", len(coveragePoints))
+	}
+
+	// The assignment "x := x + 1" should have NOTIFY *after* it.
+	assignSignal := coveragePoints[0].SignalID
+	assignNotify := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", assignSignal)
+	assignIdx := strings.Index(instrumentedSQL, assignNotify)
+	assignStmtIdx := strings.Index(instrumentedSQL, "x := x + 1")
+	if assignIdx < 0 || assignStmtIdx < 0 {
+		t.Fatal("could not find assignment or its notify in instrumented SQL")
+	}
+	if assignIdx <= assignStmtIdx {
+		t.Errorf("assignment: NOTIFY at %d should come after statement at %d (coverage-after-execute)", assignIdx, assignStmtIdx)
+	}
+
+	// The RETURN should have NOTIFY *before* it (terminal statement).
+	returnSignal := coveragePoints[1].SignalID
+	returnNotify := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", returnSignal)
+	returnIdx := strings.Index(instrumentedSQL, returnNotify)
+	returnStmtIdx := strings.Index(instrumentedSQL, "RETURN x")
+	if returnIdx < 0 || returnStmtIdx < 0 {
+		t.Fatal("could not find RETURN or its notify in instrumented SQL")
+	}
+	if returnIdx >= returnStmtIdx {
+		t.Errorf("RETURN: NOTIFY at %d should come before statement at %d (terminal statement)", returnIdx, returnStmtIdx)
+	}
+
+	t.Log(instrumentedSQL)
+}
+
+func TestInstrumentBody_RaiseExceptionBeforeNotify(t *testing.T) {
+	// Use standalone RAISE statements so each is its own segment.
+	sql := `CREATE OR REPLACE FUNCTION check_positive(x INT)
+RETURNS VOID AS $$
+BEGIN
+    RAISE NOTICE 'checking value: %', x;
+    RAISE EXCEPTION 'negative value: %', x;
+END;
+$$ LANGUAGE plpgsql;`
+
+	stmts := parser.ParseStatements(sql)
+	if len(stmts) == 0 {
+		t.Fatal("ParseStatements() returned no statements")
+	}
+
+	instrumentedSQL, coveragePoints := instrumentBody(stmts[0], "test.sql", true, "PERFORM")
+	if len(coveragePoints) != 2 {
+		t.Fatalf("expected 2 coverage points, got %d", len(coveragePoints))
+	}
+
+	// RAISE NOTICE is non-terminal — NOTIFY should come after it.
+	raiseNoticeSignal := coveragePoints[0].SignalID
+	raiseNoticeNotify := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", raiseNoticeSignal)
+	raiseNoticeIdx := strings.Index(instrumentedSQL, raiseNoticeNotify)
+	raiseNoticeStmtIdx := strings.Index(instrumentedSQL, "RAISE NOTICE")
+	if raiseNoticeIdx < 0 || raiseNoticeStmtIdx < 0 {
+		t.Fatal("could not find RAISE NOTICE or its notify")
+	}
+	if raiseNoticeIdx <= raiseNoticeStmtIdx {
+		t.Errorf("RAISE NOTICE: NOTIFY at %d should come after statement at %d", raiseNoticeIdx, raiseNoticeStmtIdx)
+	}
+
+	// RAISE EXCEPTION is terminal — NOTIFY should come before it.
+	raiseExcSignal := coveragePoints[1].SignalID
+	raiseExcNotify := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", raiseExcSignal)
+	raiseExcIdx := strings.Index(instrumentedSQL, raiseExcNotify)
+	raiseExcStmtIdx := strings.Index(instrumentedSQL, "RAISE EXCEPTION")
+	if raiseExcIdx < 0 || raiseExcStmtIdx < 0 {
+		t.Fatal("could not find RAISE EXCEPTION or its notify")
+	}
+	if raiseExcIdx >= raiseExcStmtIdx {
+		t.Errorf("RAISE EXCEPTION: NOTIFY at %d should come before statement at %d", raiseExcIdx, raiseExcStmtIdx)
+	}
+
+	t.Log(instrumentedSQL)
 }
