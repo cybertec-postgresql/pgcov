@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/cybertec-postgresql/pgcov/pkg/types"
@@ -13,11 +14,12 @@ import (
 
 // Listener handles PostgreSQL LISTEN/NOTIFY for coverage signals
 type Listener struct {
-	conn    *pgx.Conn
-	channel string
-	signals chan types.CoverageSignal
-	errors  chan error
-	done    chan struct{}
+	conn           *pgx.Conn
+	channel        string
+	signals        chan types.CoverageSignal
+	errors         chan error
+	done           chan struct{}
+	droppedSignals atomic.Int64
 }
 
 // NewListener creates a new LISTEN/NOTIFY listener using the config from a pool.
@@ -105,11 +107,9 @@ func (l *Listener) receiveLoop(ctx context.Context) {
 				select {
 				case l.signals <- signal:
 				default:
-					// Buffer full, log warning but don't block
-					select {
-					case l.errors <- fmt.Errorf("signal buffer full, dropping signal: %s", notification.Payload):
-					default:
-					}
+					// Buffer full — increment counter so the caller can
+					// detect and report lost signals after test execution.
+					l.droppedSignals.Add(1)
 				}
 			}
 		}
@@ -124,6 +124,13 @@ func (l *Listener) Signals() <-chan types.CoverageSignal {
 // Errors returns a channel that receives listener errors
 func (l *Listener) Errors() <-chan error {
 	return l.errors
+}
+
+// DroppedSignals returns the number of signals that were dropped because
+// the internal buffer was full.  A non-zero value means coverage data is
+// incomplete.
+func (l *Listener) DroppedSignals() int64 {
+	return l.droppedSignals.Load()
 }
 
 // Close stops the listener and closes the connection

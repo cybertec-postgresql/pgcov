@@ -261,6 +261,12 @@ func (e *Executor) executeTestWorkflow(ctx context.Context, testRun *TestRun, so
 		fmt.Printf("[DEBUG] Collected %d signals\n", len(signals))
 	}
 
+	// Check for dropped signals — warns about incomplete coverage data
+	if dropped := listener.DroppedSignals(); dropped > 0 {
+		fmt.Printf("[WARNING] %d coverage signal(s) dropped for %s (buffer full) — coverage data is incomplete\n",
+			dropped, testRun.Test.RelativePath)
+	}
+
 	// Append NOTIFY signals to the implicit coverage signals
 	testRun.CoverageSigs = append(testRun.CoverageSigs, signals...)
 
