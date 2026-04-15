@@ -18,17 +18,29 @@ type Listener struct {
 	channel        string
 	signals        chan types.CoverageSignal
 	errors         chan error
-	done           chan struct{}
+	cancel         context.CancelFunc
 	droppedSignals atomic.Int64
 }
 
 // NewListener creates a new LISTEN/NOTIFY listener using the config from a pool.
 func NewListener(ctx context.Context, pool *pgxpool.Pool, channel string) (*Listener, error) {
-	// Connect using the pool's connection config
-	conn, err := pgx.ConnectConfig(ctx, pool.Config().ConnConfig.Copy())
+	connCfg := pool.Config().ConnConfig.Copy()
+
+	listener := &Listener{
+		channel: channel,
+		signals: make(chan types.CoverageSignal, 1000), // Buffered to avoid blocking
+		errors:  make(chan error, 10),
+	}
+
+	// Register the OnNotification callback before connecting so that
+	// every notification is dispatched to our channel automatically.
+	connCfg.OnNotification = listener.handleNotification
+
+	conn, err := pgx.ConnectConfig(ctx, connCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect for LISTEN: %w", err)
 	}
+	listener.conn = conn
 
 	// Start listening on channel
 	_, err = conn.Exec(ctx, fmt.Sprintf("LISTEN %s", channel))
@@ -37,80 +49,53 @@ func NewListener(ctx context.Context, pool *pgxpool.Pool, channel string) (*List
 		return nil, fmt.Errorf("failed to execute LISTEN: %w", err)
 	}
 
-	listener := &Listener{
-		conn:    conn,
-		channel: channel,
-		signals: make(chan types.CoverageSignal, 1000), // Buffered to avoid blocking
-		errors:  make(chan error, 10),
-		done:    make(chan struct{}),
-	}
+	// Derive a cancellable context so Close can interrupt the receive loop.
+	loopCtx, cancel := context.WithCancel(ctx)
+	listener.cancel = cancel
 
-	// Start background goroutine to receive notifications
-	go listener.receiveLoop(ctx)
+	// Start background goroutine to drive reads (required for OnNotification to fire).
+	go listener.receiveLoop(loopCtx)
 
 	return listener, nil
 }
 
-// receiveLoop continuously receives notifications from PostgreSQL
+// handleNotification is the pgx OnNotification callback.  It is invoked
+// synchronously during WaitForNotification whenever a NOTIFY arrives.
+func (l *Listener) handleNotification(_ *pgconn.PgConn, n *pgconn.Notification) {
+	if n.Channel != l.channel {
+		return
+	}
+
+	signal := types.CoverageSignal{
+		SignalID:  n.Payload,
+		Timestamp: time.Now(),
+	}
+
+	select {
+	case l.signals <- signal:
+	default:
+		// Buffer full — increment counter so the caller can
+		// detect and report lost signals after test execution.
+		l.droppedSignals.Add(1)
+	}
+}
+
+// receiveLoop blocks on WaitForNotification so that the pgx connection
+// continuously reads from the server and dispatches OnNotification callbacks.
 func (l *Listener) receiveLoop(ctx context.Context) {
 	defer close(l.signals)
 	defer close(l.errors)
 
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-l.done:
-			return
-		default:
-			// Wait for notification with short timeout to allow checking done/ctx
-			waitCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
-			notification, err := l.conn.WaitForNotification(waitCtx)
-			cancel()
-
-			if err != nil {
-				// Check if context was cancelled
-				if ctx.Err() != nil {
-					return
-				}
-
-				// Check if connection is closed
-				if l.conn.IsClosed() {
-					select {
-					case l.errors <- fmt.Errorf("connection closed"):
-					default:
-					}
-					return
-				}
-
-				// Timeout is expected, just continue
-				if waitCtx.Err() == context.DeadlineExceeded {
-					continue
-				}
-
-				// Send error but continue
-				select {
-				case l.errors <- fmt.Errorf("notification error: %w", err):
-				default:
-				}
-				continue
+		_, err := l.conn.WaitForNotification(ctx)
+		if err != nil {
+			if ctx.Err() != nil || l.conn.IsClosed() {
+				return
 			}
 
-			if notification != nil && notification.Channel == l.channel {
-				// Create coverage signal
-				signal := types.CoverageSignal{
-					SignalID:  notification.Payload,
-					Timestamp: time.Now(),
-				}
-
-				// Send signal (non-blocking)
-				select {
-				case l.signals <- signal:
-				default:
-					// Buffer full — increment counter so the caller can
-					// detect and report lost signals after test execution.
-					l.droppedSignals.Add(1)
-				}
+			select {
+			case l.errors <- fmt.Errorf("notification error: %w", err):
+			default:
 			}
 		}
 	}
@@ -135,7 +120,7 @@ func (l *Listener) DroppedSignals() int64 {
 
 // Close stops the listener and closes the connection
 func (l *Listener) Close(ctx context.Context) error {
-	close(l.done)
+	l.cancel() // interrupt receiveLoop's WaitForNotification
 
 	// Unlisten
 	if l.conn != nil && !l.conn.IsClosed() {
