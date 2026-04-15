@@ -342,6 +342,12 @@ func TestGetCoveragePointBySignal(t *testing.T) {
 	if cp != nil {
 		t.Errorf("GetCoveragePointBySignal() expected nil for nonexistent signal, got %v", cp)
 	}
+
+	// Test returned pointer refers to actual slice element, not a loop-copy
+	cp = GetCoveragePointBySignal(instrumented, signal)
+	if cp != &instrumented.Locations[0] {
+		t.Error("GetCoveragePointBySignal() returned pointer to copy, not to original slice element")
+	}
 }
 
 func TestInstrument_NilInput(t *testing.T) {

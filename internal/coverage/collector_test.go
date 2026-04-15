@@ -311,3 +311,51 @@ func TestCollector_MultipleFiles(t *testing.T) {
 		t.Errorf("file2.sql position 150:55 hit count = %d, want 1", posHits2["150:55"])
 	}
 }
+
+func TestCollector_Coverage_DeepCopy(t *testing.T) {
+	c := NewCollector()
+	_ = c.AddSignal(runner.CoverageSignal{SignalID: "test.sql:100:50", Timestamp: time.Now()})
+
+	snapshot := c.Coverage()
+
+	// Mutate the returned snapshot
+	snapshot.Positions["test.sql"]["100:50"] = 999
+	snapshot.Positions["injected.sql"] = PositionHits{"0:1": 1}
+
+	// Collector's internal state must be unaffected
+	inner := c.Coverage()
+	if inner.Positions["test.sql"]["100:50"] != 1 {
+		t.Errorf("Coverage() deep copy broken: internal hit count = %d, want 1", inner.Positions["test.sql"]["100:50"])
+	}
+	if _, exists := inner.Positions["injected.sql"]; exists {
+		t.Error("Coverage() deep copy broken: mutation of snapshot leaked into collector")
+	}
+}
+
+func TestCollector_GetFilePositionCoverage_DeepCopy(t *testing.T) {
+	c := NewCollector()
+	_ = c.AddSignal(runner.CoverageSignal{SignalID: "test.sql:100:50", Timestamp: time.Now()})
+
+	posHits := c.GetFilePositionCoverage("test.sql")
+
+	// Mutate the returned map
+	posHits["100:50"] = 999
+	posHits["injected:0"] = 1
+
+	// Collector's internal state must be unaffected
+	inner := c.GetFilePositionCoverage("test.sql")
+	if inner["100:50"] != 1 {
+		t.Errorf("GetFilePositionCoverage() deep copy broken: internal hit count = %d, want 1", inner["100:50"])
+	}
+	if _, exists := inner["injected:0"]; exists {
+		t.Error("GetFilePositionCoverage() deep copy broken: mutation of snapshot leaked into collector")
+	}
+}
+
+func TestCollector_GetFilePositionCoverage_NilForMissing(t *testing.T) {
+	c := NewCollector()
+	posHits := c.GetFilePositionCoverage("nonexistent.sql")
+	if posHits != nil {
+		t.Errorf("GetFilePositionCoverage() for missing file = %v, want nil", posHits)
+	}
+}

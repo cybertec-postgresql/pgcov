@@ -2,6 +2,7 @@ package coverage
 
 import (
 	"fmt"
+	"maps"
 	"sync"
 
 	"github.com/cybertec-postgresql/pgcov/internal/instrument"
@@ -70,11 +71,11 @@ func (c *Collector) addSignalUnsafe(signal runner.CoverageSignal) error {
 	return nil
 }
 
-// Coverage returns the aggregated coverage data
+// Coverage returns a deep copy of the aggregated coverage data
 func (c *Collector) Coverage() *Coverage {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.coverage
+	return c.coverage.Clone()
 }
 
 // Reset clears all collected coverage data
@@ -112,11 +113,17 @@ func (c *Collector) Merge(other *Collector) error {
 	return nil
 }
 
-// GetFilePositionCoverage returns position coverage data for a specific file
+// GetFilePositionCoverage returns a copy of position coverage data for a specific file
 func (c *Collector) GetFilePositionCoverage(filePath string) PositionHits {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.coverage.Positions[filePath]
+	orig := c.coverage.Positions[filePath]
+	if orig == nil {
+		return nil
+	}
+	clone := make(PositionHits, len(orig))
+	maps.Copy(clone, orig)
+	return clone
 }
 
 // GetFileList returns a list of all files with coverage data

@@ -94,3 +94,20 @@ func (c *Coverage) GetFiles() []string {
 	}
 	return files
 }
+
+// Clone returns a deep copy of the Coverage struct
+func (c *Coverage) Clone() *Coverage {
+	clone := &Coverage{
+		Version:   c.Version,
+		Timestamp: c.Timestamp,
+		Positions: make(map[string]PositionHits, len(c.Positions)),
+	}
+	for file, posHits := range c.Positions {
+		clonedHits := make(PositionHits, len(posHits))
+		for k, v := range posHits {
+			clonedHits[k] = v
+		}
+		clone.Positions[file] = clonedHits
+	}
+	return clone
+}

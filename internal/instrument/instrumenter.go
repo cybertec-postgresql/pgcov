@@ -25,9 +25,9 @@ func GenerateCoverageInstruments(parsedFiles []*parser.ParsedSQL) ([]*Instrument
 
 // GetCoveragePointBySignal finds a coverage point by its signal ID
 func GetCoveragePointBySignal(instrumented *InstrumentedSQL, signalID string) *CoveragePoint {
-	for _, cp := range instrumented.Locations {
-		if cp.SignalID == signalID {
-			return &cp
+	for i := range instrumented.Locations {
+		if instrumented.Locations[i].SignalID == signalID {
+			return &instrumented.Locations[i]
 		}
 	}
 	return nil
