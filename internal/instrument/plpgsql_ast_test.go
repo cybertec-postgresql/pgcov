@@ -293,7 +293,7 @@ $$ LANGUAGE plpgsql;`
 		t.Fatal("ParseStatements() returned no statements")
 	}
 
-	instrumentedSQL, coveragePoints := instrumentBody(stmts[0], "test.sql", true, "PERFORM")
+	instrumentedSQL, coveragePoints := instrumentBody(stmts[0], "test.sql", true, false)
 	if len(coveragePoints) != 2 {
 		t.Fatalf("expected 2 coverage points, got %d", len(coveragePoints))
 	}
@@ -340,7 +340,7 @@ $$ LANGUAGE plpgsql;`
 		t.Fatal("ParseStatements() returned no statements")
 	}
 
-	instrumentedSQL, coveragePoints := instrumentBody(stmts[0], "test.sql", true, "PERFORM")
+	instrumentedSQL, coveragePoints := instrumentBody(stmts[0], "test.sql", true, false)
 	if len(coveragePoints) != 2 {
 		t.Fatalf("expected 2 coverage points, got %d", len(coveragePoints))
 	}
@@ -430,7 +430,7 @@ $$ LANGUAGE plpgsql;`
 		t.Fatal("ParseStatements() returned no statements")
 	}
 
-	instrumentedSQL, coveragePoints := instrumentBody(stmts[0], "test.sql", true, "PERFORM")
+	instrumentedSQL, coveragePoints := instrumentBody(stmts[0], "test.sql", true, false)
 	if len(coveragePoints) != 3 {
 		t.Fatalf("expected 3 coverage points, got %d", len(coveragePoints))
 	}
@@ -490,7 +490,7 @@ $$ LANGUAGE plpgsql;`
 		t.Fatal("ParseStatements() returned no statements")
 	}
 
-	instrumentedSQL, coveragePoints := instrumentBody(stmts[0], "test.sql", true, "PERFORM")
+	instrumentedSQL, coveragePoints := instrumentBody(stmts[0], "test.sql", true, false)
 	if len(coveragePoints) != 3 {
 		t.Fatalf("expected 3 coverage points, got %d", len(coveragePoints))
 	}
@@ -544,7 +544,7 @@ $$ LANGUAGE plpgsql;`
 		t.Fatal("ParseStatements() returned no statements")
 	}
 
-	instrumentedSQL, coveragePoints := instrumentBody(stmts[0], "test.sql", true, "PERFORM")
+	instrumentedSQL, coveragePoints := instrumentBody(stmts[0], "test.sql", true, false)
 	if len(coveragePoints) != 3 {
 		t.Fatalf("expected 3 coverage points, got %d", len(coveragePoints))
 	}

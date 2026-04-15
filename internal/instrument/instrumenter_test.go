@@ -32,7 +32,7 @@ $$ LANGUAGE plpgsql;`
 	}
 	stmt := stmts[0]
 
-	instrumentedSQL, coveragePoints := instrumentBody(stmt, "test.sql", true, "PERFORM")
+	instrumentedSQL, coveragePoints := instrumentBody(stmt, "test.sql", true, false)
 	if instrumentedSQL == "" {
 		t.Error("instrumentWithLexer() returned empty instrumented SQL")
 	}
@@ -125,6 +125,99 @@ $$ LANGUAGE plpgsql;`
 	if len(instrumented.Locations) == 0 {
 		t.Error("Instrument() produced no coverage points for PL/pgSQL function")
 	}
+}
+
+func TestInstrument_SQLFunction_UsesCTE(t *testing.T) {
+	sql := `CREATE OR REPLACE FUNCTION double_val(x INT)
+RETURNS INT AS $$
+    SELECT x * 2;
+$$ LANGUAGE sql;`
+
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "sqlfunc.sql")
+	if err := os.WriteFile(tmpFile, []byte(sql), 0644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	file := &discovery.DiscoveredFile{
+		Path:         tmpFile,
+		RelativePath: "sqlfunc.sql",
+		Type:         discovery.FileTypeSource,
+	}
+
+	parsed, err := parser.Parse(file)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	instrumented, err := GenerateCoverageInstrument(parsed)
+	if err != nil {
+		t.Fatalf("Instrument() error = %v", err)
+	}
+
+	// Should have coverage points
+	if len(instrumented.Locations) == 0 {
+		t.Fatal("Instrument() produced no coverage points for SQL function")
+	}
+
+	// Should use CTE-based instrumentation, not standalone SELECT pg_notify
+	if !strings.Contains(instrumented.InstrumentedText, "WITH _pgcov_signal AS (SELECT pg_notify(") {
+		t.Error("SQL function should use CTE-based instrumentation")
+	}
+
+	// Should NOT have a standalone SELECT pg_notify (without CTE wrapper)
+	// Check that 'SELECT pg_notify' only appears inside CTE definitions
+	text := instrumented.InstrumentedText
+	cteRemoved := strings.ReplaceAll(text, "WITH _pgcov_signal AS (SELECT pg_notify(", "")
+	if strings.Contains(cteRemoved, "SELECT pg_notify(") {
+		t.Error("SQL function should not have standalone SELECT pg_notify calls")
+	}
+
+	// Should NOT use PERFORM (that's for PL/pgSQL)
+	if strings.Contains(instrumented.InstrumentedText, "PERFORM pg_notify") {
+		t.Error("SQL function should not use PERFORM")
+	}
+
+	t.Logf("Instrumented SQL:\n%s", instrumented.InstrumentedText)
+}
+
+func TestInstrument_SQLFunction_MultipleStatements(t *testing.T) {
+	// SQL functions can have multiple statements; the last one determines the return value
+	sql := `CREATE OR REPLACE FUNCTION insert_and_count()
+RETURNS BIGINT AS $$
+    INSERT INTO log(msg) VALUES ('hello');
+    SELECT count(*) FROM log;
+$$ LANGUAGE sql;`
+
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "sqlfunc_multi.sql")
+	if err := os.WriteFile(tmpFile, []byte(sql), 0644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	file := &discovery.DiscoveredFile{
+		Path:         tmpFile,
+		RelativePath: "sqlfunc_multi.sql",
+		Type:         discovery.FileTypeSource,
+	}
+
+	parsed, err := parser.Parse(file)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	instrumented, err := GenerateCoverageInstrument(parsed)
+	if err != nil {
+		t.Fatalf("Instrument() error = %v", err)
+	}
+
+	// Both statements should get CTE-based instrumentation
+	cteCount := strings.Count(instrumented.InstrumentedText, "WITH _pgcov_signal AS (SELECT pg_notify(")
+	if cteCount < 2 {
+		t.Errorf("Expected at least 2 CTE injections for multi-statement SQL function, got %d", cteCount)
+	}
+
+	t.Logf("Instrumented SQL:\n%s", instrumented.InstrumentedText)
 }
 
 func TestInstrument_MultipleStatements(t *testing.T) {

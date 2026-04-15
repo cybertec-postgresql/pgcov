@@ -766,3 +766,173 @@ func countCoveredPositions(hits coverage.PositionHits) int {
 	}
 	return count
 }
+
+// TestSQLFunctionInstrumentation verifies that SQL-language functions are
+// correctly instrumented using CTE-based pg_notify injection instead of
+// standalone SELECT pg_notify() which breaks return types (B6).
+func TestSQLFunctionInstrumentation(t *testing.T) {
+	ctx := context.Background()
+
+	// Start PostgreSQL container
+	t.Log("Starting PostgreSQL container for SQL function instrumentation test...")
+	pgContainer, err := postgres.Run(ctx,
+		"docker.io/postgres:16-alpine",
+		postgres.WithDatabase("testdb"),
+		postgres.WithUsername("testuser"),
+		postgres.WithPassword("testpass"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(60*time.Second)),
+	)
+	if err != nil {
+		t.Fatalf("Failed to start PostgreSQL container: %v", err)
+	}
+	defer func() {
+		if err := pgContainer.Terminate(ctx); err != nil {
+			t.Logf("Failed to terminate container: %v", err)
+		}
+	}()
+
+	host, _ := pgContainer.Host(ctx)
+	port, _ := pgContainer.MappedPort(ctx, "5432")
+
+	connString := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=prefer",
+		host, port.Port())
+	config := &types.Config{
+		ConnectionString: connString,
+		Timeout:          30 * time.Second,
+		Parallelism:      1,
+		CoverageFile:     filepath.Join(t.TempDir(), "coverage.json"),
+		Verbose:          true,
+	}
+
+	testDir := "../testdata/sqlfunc"
+
+	t.Run("FullExecution", func(t *testing.T) {
+		exitCode, err := cli.Run(ctx, config, testDir)
+		if err != nil {
+			t.Fatalf("cli.Run failed: %v", err)
+		}
+		if exitCode != 0 {
+			t.Fatalf("expected exit code 0, got %d", exitCode)
+		}
+
+		// Load coverage data
+		store := coverage.NewStore(config.CoverageFile)
+		cov, err := store.Load()
+		if err != nil {
+			t.Fatalf("Failed to load coverage: %v", err)
+		}
+
+		// We expect coverage data for the SQL function source file
+		files := cov.GetFiles()
+		if len(files) == 0 {
+			t.Fatal("No files in coverage data")
+		}
+
+		t.Logf("Coverage files: %v", files)
+		for _, f := range files {
+			hits := cov.Positions[f]
+			covered := countCoveredPositions(hits)
+			t.Logf("  %s: %d/%d positions covered", f, covered, len(hits))
+		}
+
+		totalPct := cov.TotalPositionCoveragePercent()
+		t.Logf("Total coverage: %.2f%%", totalPct)
+
+		if totalPct <= 0 {
+			t.Error("Expected some coverage from SQL function tests")
+		}
+	})
+
+	t.Run("InstrumentedSQLValid", func(t *testing.T) {
+		// Verify that the instrumented SQL is syntactically valid by
+		// deploying it into a real database and calling the functions.
+		pool, err := database.NewPool(ctx, config)
+		if err != nil {
+			t.Fatalf("Failed to create pool: %v", err)
+		}
+		defer pool.Close()
+
+		tempPool, err := database.CreateTempDatabase(ctx, pool)
+		if err != nil {
+			t.Fatalf("Failed to create temp database: %v", err)
+		}
+		defer func() {
+			_ = database.DestroyTempDatabase(ctx, pool, tempPool)
+		}()
+
+		// Discover, parse, instrument
+		sourceFiles, err := discovery.DiscoverSources(testDir)
+		if err != nil {
+			t.Fatalf("Failed to discover sources: %v", err)
+		}
+		var parsedSources []*parser.ParsedSQL
+		for i := range sourceFiles {
+			parsed, err := parser.Parse(&sourceFiles[i])
+			if err != nil {
+				t.Fatalf("Failed to parse %s: %v", sourceFiles[i].RelativePath, err)
+			}
+			parsedSources = append(parsedSources, parsed)
+		}
+		instrumentedSources, err := instrument.GenerateCoverageInstruments(parsedSources)
+		if err != nil {
+			t.Fatalf("Failed to instrument sources: %v", err)
+		}
+
+		// Deploy instrumented SQL
+		conn, err := tempPool.Acquire(ctx)
+		if err != nil {
+			t.Fatalf("Failed to acquire connection: %v", err)
+		}
+		defer conn.Release()
+
+		for _, inst := range instrumentedSources {
+			t.Logf("Deploying instrumented SQL:\n%s", inst.InstrumentedText)
+			_, err := conn.Exec(ctx, inst.InstrumentedText)
+			if err != nil {
+				t.Fatalf("Failed to deploy instrumented SQL for %s: %v",
+					inst.Original.File.RelativePath, err)
+			}
+		}
+
+		// Call each SQL function and verify it returns the correct value
+		var result int
+		err = conn.QueryRow(ctx, "SELECT double_val(5)").Scan(&result)
+		if err != nil {
+			t.Fatalf("double_val(5) failed: %v", err)
+		}
+		if result != 10 {
+			t.Errorf("double_val(5) = %d, want 10", result)
+		}
+
+		err = conn.QueryRow(ctx, "SELECT add_vals(3, 4)").Scan(&result)
+		if err != nil {
+			t.Fatalf("add_vals(3,4) failed: %v", err)
+		}
+		if result != 7 {
+			t.Errorf("add_vals(3,4) = %d, want 7", result)
+		}
+
+		var greeting string
+		err = conn.QueryRow(ctx, "SELECT greet('pgcov')").Scan(&greeting)
+		if err != nil {
+			t.Fatalf("greet('pgcov') failed: %v", err)
+		}
+		if greeting != "Hello, pgcov!" {
+			t.Errorf("greet('pgcov') = %q, want %q", greeting, "Hello, pgcov!")
+		}
+
+		// Multi-statement SQL function
+		err = conn.QueryRow(ctx, "SELECT insert_and_return(7)").Scan(&result)
+		if err != nil {
+			t.Fatalf("insert_and_return(7) failed: %v", err)
+		}
+		if result != 70 {
+			t.Errorf("insert_and_return(7) = %d, want 70", result)
+		}
+
+		t.Log("All SQL functions return correct values with CTE-based instrumentation")
+	})
+}

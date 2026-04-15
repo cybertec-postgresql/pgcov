@@ -74,10 +74,10 @@ func instrumentStatement(stmt *parser.Statement, filePath string) (string, []Cov
 	case parser.StmtFunction, parser.StmtProcedure, parser.StmtDO:
 		switch stmt.Language {
 		case "plpgsql":
-			instrumented, locs := instrumentBody(stmt, filePath, true, "PERFORM")
+			instrumented, locs := instrumentBody(stmt, filePath, true, false)
 			return instrumented, locs
 		case "sql":
-			instrumented, locs := instrumentBody(stmt, filePath, false, "SELECT")
+			instrumented, locs := instrumentBody(stmt, filePath, false, true)
 			return instrumented, locs
 		default:
 			// Unknown language, mark as implicitly covered
@@ -101,8 +101,12 @@ func instrumentStatement(stmt *parser.Statement, filePath string) (string, []Cov
 //
 // For PL/pgSQL (skipToBegin=true), tokens before the first BEGIN are skipped.
 // For SQL functions (skipToBegin=false), instrumentation starts immediately.
-// notifyCmd is "PERFORM" for PL/pgSQL or "SELECT" for SQL functions.
-func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, notifyCmd string) (string, []CoveragePoint) {
+// When useCTE is true, coverage signals are injected as a CTE prefix
+// (WITH _pgcov_signal AS (SELECT pg_notify(...)) <original statement>)
+// instead of a standalone statement, avoiding extra result sets that break
+// SQL-language function return types.
+// When useCTE is false, signals use PERFORM pg_notify(...) (PL/pgSQL).
+func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, useCTE bool) (string, []CoveragePoint) {
 	bodyContent := stmt.Body
 	if bodyContent == "" {
 		return stmt.RawSQL, nil
@@ -132,7 +136,7 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, n
 	// For terminal statements (RETURN, RAISE EXCEPTION) the signal is
 	// emitted *before* the statement because nothing executes after them.
 	// For all other statements the signal is emitted *after* the statement
-	// so that coverage is recorded only on successful execution (B1 fix).
+	// so that coverage is recorded only on successful execution.
 	emitSegment := func(segEnd int) {
 		segText := bodyContent[segStart:segEnd]
 		if !isExecutableSegment(segText) {
@@ -167,7 +171,16 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, n
 
 		escapedSignal := strings.ReplaceAll(cp.SignalID, "'", "''")
 
-		if termPos := findTerminalPos(segText); termPos >= 0 {
+		if useCTE {
+			// SQL-language functions: inject coverage signal as a CTE
+			// prefix so we don't produce an extra result set that would
+			// conflict with the function's declared return type (B6).
+			ctePrefix := fmt.Sprintf("WITH _pgcov_signal AS (SELECT pg_notify('pgcov', '%s')) ",
+				escapedSignal)
+			instrumentedBody.WriteString(ctePrefix)
+			instrumentedBody.WriteString(segText)
+			lastWrittenPos = segEnd
+		} else if termPos := findTerminalPos(segText); termPos >= 0 {
 			// Segment contains (or starts with) a terminal statement
 			// (RETURN, RAISE EXCEPTION).  Place the signal before the
 			// terminal so it fires before the scope exits.
@@ -175,8 +188,8 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, n
 			// when termPos > 0 it is nested inside a control structure
 			// (e.g. IF … THEN RETURN …).
 			termIndent := indentOf(segText[termPos:])
-			notifyCall := fmt.Sprintf("%s%s pg_notify('pgcov', '%s');",
-				termIndent, notifyCmd, escapedSignal)
+			notifyCall := fmt.Sprintf("%sPERFORM pg_notify('pgcov', '%s');",
+				termIndent, escapedSignal)
 			instrumentedBody.WriteString(segText[:termPos])
 			fmt.Fprintf(&instrumentedBody, "%s\n", notifyCall)
 			instrumentedBody.WriteString(segText[termPos:])
@@ -193,8 +206,8 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, n
 			} else {
 				lastWrittenPos = segEnd
 			}
-			notifyCall := fmt.Sprintf("%s%s pg_notify('pgcov', '%s');",
-				indent, notifyCmd, escapedSignal)
+			notifyCall := fmt.Sprintf("%sPERFORM pg_notify('pgcov', '%s');",
+				indent, escapedSignal)
 			fmt.Fprintf(&instrumentedBody, "\n%s", notifyCall)
 		}
 	}
