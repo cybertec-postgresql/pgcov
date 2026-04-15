@@ -165,14 +165,21 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, n
 			}
 		}
 
-		notifyCall := fmt.Sprintf("%s%s pg_notify('pgcov', '%s');",
-			indent, notifyCmd, strings.ReplaceAll(cp.SignalID, "'", "''"))
+		escapedSignal := strings.ReplaceAll(cp.SignalID, "'", "''")
 
-		if isTerminalSegment(segText) {
-			// Terminal statements (RETURN, RAISE EXCEPTION) exit the
-			// current scope — the signal must fire before the statement.
+		if termPos := findTerminalPos(segText); termPos >= 0 {
+			// Segment contains (or starts with) a terminal statement
+			// (RETURN, RAISE EXCEPTION).  Place the signal before the
+			// terminal so it fires before the scope exits.
+			// When termPos == 0 the segment starts with the terminal;
+			// when termPos > 0 it is nested inside a control structure
+			// (e.g. IF … THEN RETURN …).
+			termIndent := indentOf(segText[termPos:])
+			notifyCall := fmt.Sprintf("%s%s pg_notify('pgcov', '%s');",
+				termIndent, notifyCmd, escapedSignal)
+			instrumentedBody.WriteString(segText[:termPos])
 			fmt.Fprintf(&instrumentedBody, "%s\n", notifyCall)
-			instrumentedBody.WriteString(segText)
+			instrumentedBody.WriteString(segText[termPos:])
 			lastWrittenPos = segEnd
 		} else {
 			// Non-terminal statements: emit the signal after the
@@ -186,6 +193,8 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, n
 			} else {
 				lastWrittenPos = segEnd
 			}
+			notifyCall := fmt.Sprintf("%s%s pg_notify('pgcov', '%s');",
+				indent, notifyCmd, escapedSignal)
 			fmt.Fprintf(&instrumentedBody, "\n%s", notifyCall)
 		}
 	}
@@ -274,49 +283,52 @@ func isExecutableSegment(segmentContent string) bool {
 	return true
 }
 
-// isTerminalSegment checks whether a segment starts with a terminal statement
-// (RETURN or RAISE EXCEPTION / bare RAISE) that exits the current scope.
-// NOTIFY calls placed after such statements would be unreachable.
-// Non-fatal RAISE levels (NOTICE, WARNING, INFO, LOG, DEBUG) are not terminal.
-func isTerminalSegment(segmentContent string) bool {
+// findTerminalPos scans segmentContent for a terminal statement (RETURN or
+// fatal RAISE) and returns its byte position within the string.  Returns -1
+// if no terminal statement is found.  This is used for segments that wrap a
+// terminal inside a control-flow keyword (e.g. IF/ELSIF/ELSE … RETURN …).
+func findTerminalPos(segmentContent string) int {
 	sc := pglex.NewScanner(segmentContent)
-
-	// Find the first non-comment token.
-	var first pglex.Token
 	for {
-		first = sc.Scan()
-		if first.Type == pglex.EOF {
-			return false
+		tok := sc.Scan()
+		if tok.Type == pglex.EOF {
+			return -1
 		}
-		if first.Type != pglex.Comment {
-			break
+		if tok.Type == pglex.KReturn {
+			return tok.Pos
 		}
-	}
-
-	if first.Type == pglex.KReturn {
-		return true
-	}
-
-	if first.Type == pglex.KRaise {
-		// RAISE is terminal unless followed by a non-fatal level.
-		for {
-			tok := sc.Scan()
-			if tok.Type == pglex.EOF {
-				return true // bare RAISE; — re-raise in exception handler
-			}
-			if tok.Type == pglex.Comment {
-				continue
-			}
-			switch tok.Type {
-			case pglex.KNotice, pglex.KWarning, pglex.KInfo, pglex.KLog, pglex.KDebug:
-				return false
-			default:
-				return true // RAISE EXCEPTION, RAISE 'message', etc.
+		if tok.Type == pglex.KRaise {
+			pos := tok.Pos
+			// Peek at the next non-comment token to decide fatality.
+			for {
+				next := sc.Scan()
+				if next.Type == pglex.EOF {
+					return pos // bare RAISE — re-raise
+				}
+				if next.Type == pglex.Comment {
+					continue
+				}
+				switch next.Type {
+				case pglex.KNotice, pglex.KWarning, pglex.KInfo, pglex.KLog, pglex.KDebug:
+					// Non-fatal RAISE; continue scanning for a later terminal.
+					break
+				default:
+					return pos // RAISE EXCEPTION, RAISE 'msg', etc.
+				}
+				break
 			}
 		}
 	}
+}
 
-	return false
+// indentOf returns the leading whitespace of the first non-empty line in s.
+func indentOf(s string) string {
+	for line := range strings.SplitSeq(s, "\n") {
+		if strings.TrimSpace(line) != "" {
+			return getIndentation(line)
+		}
+	}
+	return ""
 }
 
 // getIndentation returns the leading whitespace of a line.

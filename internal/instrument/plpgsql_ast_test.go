@@ -238,11 +238,13 @@ $$ LANGUAGE plpgsql;`
 	t.Logf("Coverage points: %d (may be 0 for malformed SQL)", len(instrumented.Locations))
 }
 
-func TestIsTerminalSegment(t *testing.T) {
+func TestFindTerminalPos_StartingTerminals(t *testing.T) {
+	// Segments that start with a terminal should return pos 0.
+	// Segments without any terminal should return -1.
 	tests := []struct {
-		name     string
-		segment  string
-		terminal bool
+		name      string
+		segment   string
+		wantFound bool
 	}{
 		{"RETURN value", "RETURN a + b", true},
 		{"RETURN bare", "RETURN", true},
@@ -265,9 +267,11 @@ func TestIsTerminalSegment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isTerminalSegment(tt.segment)
-			if got != tt.terminal {
-				t.Errorf("isTerminalSegment(%q) = %v, want %v", tt.segment, got, tt.terminal)
+			got := findTerminalPos(tt.segment)
+			if tt.wantFound && got < 0 {
+				t.Errorf("findTerminalPos(%q) = -1, want >= 0", tt.segment)
+			} else if !tt.wantFound && got >= 0 {
+				t.Errorf("findTerminalPos(%q) = %d, want -1", tt.segment, got)
 			}
 		})
 	}
@@ -363,6 +367,207 @@ $$ LANGUAGE plpgsql;`
 	}
 	if raiseExcIdx >= raiseExcStmtIdx {
 		t.Errorf("RAISE EXCEPTION: NOTIFY at %d should come before statement at %d", raiseExcIdx, raiseExcStmtIdx)
+	}
+
+	t.Log(instrumentedSQL)
+}
+
+func TestFindTerminalPos(t *testing.T) {
+	tests := []struct {
+		name      string
+		segment   string
+		wantFound bool   // whether a terminal is expected
+		wantText  string // expected text at the found position (prefix check)
+	}{
+		{"bare RETURN", "RETURN x", true, "RETURN"},
+		{"IF with RETURN", "IF x > 0 THEN\n        RETURN 1", true, "RETURN"},
+		{"ELSIF with RETURN", "\n    ELSIF x > 5 THEN\n        RETURN 2", true, "RETURN"},
+		{"ELSE with RETURN", "\n    ELSE\n        RETURN 3", true, "RETURN"},
+		{"no terminal", "x := x + 1", false, ""},
+		{"RAISE NOTICE", "RAISE NOTICE 'hello'", false, ""},
+		{"IF with RAISE EXCEPTION", "IF x < 0 THEN\n        RAISE EXCEPTION 'bad'", true, "RAISE"},
+		{"IF with non-terminal", "IF x > 0 THEN\n        x := 1", false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := findTerminalPos(tt.segment)
+			if tt.wantFound {
+				if got < 0 {
+					t.Fatalf("findTerminalPos(%q) = -1, want >= 0", tt.segment)
+				}
+				if !strings.HasPrefix(tt.segment[got:], tt.wantText) {
+					t.Errorf("findTerminalPos(%q) at %d: got %q, want prefix %q",
+						tt.segment, got, tt.segment[got:], tt.wantText)
+				}
+			} else {
+				if got >= 0 {
+					t.Errorf("findTerminalPos(%q) = %d, want -1", tt.segment, got)
+				}
+			}
+		})
+	}
+}
+
+func TestInstrumentBody_ReturnInBranches(t *testing.T) {
+	// B2 scenario: IF/ELSIF/ELSE with RETURN in each branch.
+	// All signals must be reachable (placed before the RETURN inside each branch).
+	sql := `CREATE OR REPLACE FUNCTION check_stock(v_stock INT)
+RETURNS TEXT AS $$
+BEGIN
+    IF v_stock = 0 THEN
+        RETURN 'out_of_stock';
+    ELSIF v_stock <= 10 THEN
+        RETURN 'low_stock';
+    ELSE
+        RETURN 'in_stock';
+    END IF;
+END;
+$$ LANGUAGE plpgsql;`
+
+	stmts := parser.ParseStatements(sql)
+	if len(stmts) == 0 {
+		t.Fatal("ParseStatements() returned no statements")
+	}
+
+	instrumentedSQL, coveragePoints := instrumentBody(stmts[0], "test.sql", true, "PERFORM")
+	if len(coveragePoints) != 3 {
+		t.Fatalf("expected 3 coverage points, got %d", len(coveragePoints))
+	}
+
+	// For each coverage point, verify the NOTIFY comes BEFORE the RETURN
+	// inside the branch—not after it (which would be unreachable).
+	returns := []string{"RETURN 'out_of_stock'", "RETURN 'low_stock'", "RETURN 'in_stock'"}
+	for i, cp := range coveragePoints {
+		notify := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", cp.SignalID)
+		notifyIdx := strings.Index(instrumentedSQL, notify)
+		returnIdx := strings.Index(instrumentedSQL, returns[i])
+		if notifyIdx < 0 || returnIdx < 0 {
+			t.Fatalf("cp %d: could not find notify or %s", i, returns[i])
+		}
+		if notifyIdx > returnIdx {
+			t.Errorf("cp %d (%s): NOTIFY at %d after RETURN at %d — signal is unreachable",
+				i, returns[i], notifyIdx, returnIdx)
+		}
+	}
+
+	// Also verify the instrumented SQL does NOT have a PERFORM between
+	// a RETURN and the next ELSIF/ELSE/END (that would be unreachable code).
+	for _, kw := range []string{"ELSIF", "ELSE", "END IF"} {
+		kwIdx := strings.Index(instrumentedSQL, kw)
+		if kwIdx < 0 {
+			continue
+		}
+		// Check a narrow window before the keyword for a rogue PERFORM.
+		before := instrumentedSQL[max(0, kwIdx-80):kwIdx]
+		// There should be a RETURN between the PERFORM and the keyword boundary.
+		lastPerform := strings.LastIndex(before, "PERFORM pg_notify")
+		lastReturn := strings.LastIndex(before, "RETURN")
+		if lastPerform >= 0 && lastReturn >= 0 && lastPerform > lastReturn {
+			t.Errorf("unreachable PERFORM found between RETURN and %s", kw)
+		}
+	}
+
+	t.Log(instrumentedSQL)
+}
+
+func TestInstrumentBody_RaiseExceptionInBranch(t *testing.T) {
+	// Segment: IF ... THEN RAISE EXCEPTION ... — terminal inside control structure.
+	sql := `CREATE OR REPLACE FUNCTION validate(x INT)
+RETURNS VOID AS $$
+BEGIN
+    IF x < 0 THEN
+        RAISE EXCEPTION 'negative: %', x;
+    ELSIF x = 0 THEN
+        RAISE EXCEPTION 'zero';
+    END IF;
+    RAISE NOTICE 'ok: %', x;
+END;
+$$ LANGUAGE plpgsql;`
+
+	stmts := parser.ParseStatements(sql)
+	if len(stmts) == 0 {
+		t.Fatal("ParseStatements() returned no statements")
+	}
+
+	instrumentedSQL, coveragePoints := instrumentBody(stmts[0], "test.sql", true, "PERFORM")
+	if len(coveragePoints) != 3 {
+		t.Fatalf("expected 3 coverage points, got %d", len(coveragePoints))
+	}
+
+	// First two are in IF/ELSIF branches with RAISE EXCEPTION (terminal).
+	// Signals must appear before the RAISE EXCEPTION.
+	for i, target := range []string{"RAISE EXCEPTION 'negative", "RAISE EXCEPTION 'zero"} {
+		notify := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", coveragePoints[i].SignalID)
+		notifyIdx := strings.Index(instrumentedSQL, notify)
+		stmtIdx := strings.Index(instrumentedSQL, target)
+		if notifyIdx < 0 || stmtIdx < 0 {
+			t.Fatalf("cp %d: could not find notify or %q", i, target)
+		}
+		if notifyIdx > stmtIdx {
+			t.Errorf("cp %d: NOTIFY at %d after %q at %d — unreachable", i, notifyIdx, target, stmtIdx)
+		}
+	}
+
+	// Third is RAISE NOTICE (non-terminal, standalone). Signal should come after.
+	notify2 := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", coveragePoints[2].SignalID)
+	notifyIdx2 := strings.Index(instrumentedSQL, notify2)
+	noticeIdx := strings.Index(instrumentedSQL, "RAISE NOTICE")
+	if notifyIdx2 < 0 || noticeIdx < 0 {
+		t.Fatal("could not find RAISE NOTICE or its notify")
+	}
+	if notifyIdx2 <= noticeIdx {
+		t.Errorf("RAISE NOTICE: NOTIFY at %d should come after statement at %d", notifyIdx2, noticeIdx)
+	}
+
+	t.Log(instrumentedSQL)
+}
+
+func TestInstrumentBody_MixedTerminalNonTerminalBranches(t *testing.T) {
+	// Branch with RETURN vs branch with assignment — signal placement differs.
+	sql := `CREATE OR REPLACE FUNCTION classify(x INT)
+RETURNS TEXT AS $$
+DECLARE
+    result TEXT;
+BEGIN
+    IF x > 0 THEN
+        result := 'positive';
+    ELSE
+        RETURN 'non-positive';
+    END IF;
+    RETURN result;
+END;
+$$ LANGUAGE plpgsql;`
+
+	stmts := parser.ParseStatements(sql)
+	if len(stmts) == 0 {
+		t.Fatal("ParseStatements() returned no statements")
+	}
+
+	instrumentedSQL, coveragePoints := instrumentBody(stmts[0], "test.sql", true, "PERFORM")
+	if len(coveragePoints) != 3 {
+		t.Fatalf("expected 3 coverage points, got %d", len(coveragePoints))
+	}
+
+	// cp0: IF ... result := 'positive' — no terminal, signal after.
+	assign := "result := 'positive'"
+	assignNotify := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", coveragePoints[0].SignalID)
+	if strings.Index(instrumentedSQL, assignNotify) < strings.Index(instrumentedSQL, assign) {
+		t.Error("assignment branch: NOTIFY should come AFTER the assignment")
+	}
+
+	// cp1: ELSE RETURN 'non-positive' — terminal inside branch, signal before.
+	ret1 := "RETURN 'non-positive'"
+	retNotify1 := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", coveragePoints[1].SignalID)
+	if strings.Index(instrumentedSQL, retNotify1) > strings.Index(instrumentedSQL, ret1) {
+		t.Error("ELSE RETURN branch: NOTIFY should come BEFORE the RETURN")
+	}
+
+	// cp2: standalone RETURN result — terminal at start, signal before.
+	ret2 := "RETURN result"
+	retNotify2 := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", coveragePoints[2].SignalID)
+	if strings.Index(instrumentedSQL, retNotify2) > strings.Index(instrumentedSQL, ret2) {
+		t.Error("standalone RETURN: NOTIFY should come BEFORE the RETURN")
 	}
 
 	t.Log(instrumentedSQL)
