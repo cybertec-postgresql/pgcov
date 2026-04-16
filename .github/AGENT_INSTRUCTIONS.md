@@ -1,18 +1,6 @@
 # AI Agent Instructions for pgcov
 
-This document provides comprehensive guidance for AI agents working on the pgcov project. Read this carefully before making any contributions.
-
-## Table of Contents
-
-- [Project Overview](#project-overview)
-- [Core Principles & Constitution](#core-principles--constitution)
-- [Architecture & Design](#architecture--design)
-- [Development Environment](#development-environment)
-- [Code Standards](#code-standards)
-- [Testing Requirements](#testing-requirements)
-- [Common Tasks](#common-tasks)
-- [CI/CD Integration](#cicd-integration)
-- [Troubleshooting](#troubleshooting)
+Comprehensive guidance for AI agents contributing to pgcov.
 
 ---
 
@@ -22,152 +10,92 @@ This document provides comprehensive guidance for AI agents working on the pgcov
 
 ### Key Facts
 
-- **Language**: Go 1.21+
-- **Build System**: CGO-enabled (requires C compiler)
-- **Target**: Cross-platform (Linux, macOS, Windows)
-- **PostgreSQL Support**: Version 13+
+- **Language**: Go 1.24+
+- **Build**: CGO-enabled (requires C compiler)
+- **PostgreSQL**: Version 13+
 - **Output Formats**: JSON, LCOV, HTML
 
 ### Project Structure
 
 ```
 pgcov/
-├── cmd/pgcov/              # CLI entry point
-├── internal/               # Core implementation
-│   ├── cli/               # Command handlers (run, report)
-│   ├── coverage/          # Coverage collection & storage
-│   ├── database/          # PostgreSQL connection & temp DB management
-│   ├── discovery/         # Test/source file discovery
-│   ├── instrument/        # SQL/PL/pgSQL instrumentation
-│   ├── parser/            # SQL token scanning (pglex-based, not pg_query_go)
-│   ├── report/            # Report formatters (JSON, LCOV, HTML)
-│   └── runner/            # Test execution & parallelization
-├── internal/testutil/     # Shared test helpers (Docker-based Postgres)
+├── cmd/pgcov/main.go       # CLI entry point (urfave/cli/v3, inline commands)
+├── internal/
+│   ├── cli/               # Run/Report handlers + ApplyFlagsToConfig
+│   ├── coverage/          # Collector, Coverage model, Store
+│   ├── database/          # Pool, Listener (LISTEN/NOTIFY), temp DB
+│   ├── discovery/         # ClassifyFile/ClassifyPath, discover walk
+│   ├── instrument/        # Instrumenter, ParseSignalID, FormatSignalID
+│   ├── parser/            # pglex token scan → []*Statement
+│   ├── report/            # Formatter interface, JSON/LCOV/HTML impls
+│   └── runner/            # Executor, WorkerPool, TestRun/TestStatus
+├── internal/testutil/     # Docker-based Postgres setup (testcontainers-go)
+├── internal/integration_test.go  # Integration tests (package integration_test)
+├── pkg/types/types.go     # Shared Config, CoverageSignal types
 ├── testdata/              # Integration test fixtures
-├── examples/              # Usage examples
+└── examples/              # Usage examples
 ```
 
 ---
 
-## Core Principles & Constitution
+## Core Principles (Non-Negotiable)
 
-**CRITICAL**: All development MUST comply with the project constitution. 
+1. **Direct Protocol** — Use `pgx` only. Never `psql`, shell exec, or extensions.
+2. **Test Isolation** — Each test gets its own temp DB. No shared state between tests, ever.
+3. **Instrumentation Transparency** — Rewrite in-memory only. Must not change SQL semantics.
+4. **CLI-First** — Flags, env vars (`PGCOV_*`), and `pkg/types.Config` are the config contract.
+5. **Coverage Accuracy** — Deterministic results over speed.
+6. **Idiomatic Go** — No CGO deps beyond build toolchain. No logger package (`fmt.Printf` + verbose flag).
 
-### The Six Principles
+### Non-Goals
 
-#### I. Direct Protocol Access
-
-- MUST use native PostgreSQL protocol (via `pgx`)
-- NEVER depend on `psql`, shell execution, or external CLI tools
-- Ensures consistent behavior across environments
-
-#### II. Test Isolation
-
-- Each test MUST run in a temporary database (created/destroyed per test)
-- NO shared state between tests
-- Tests MUST be order-independent and parallelizable
-
-#### III. Instrumentation Transparency
-
-- Instrument SQL/PL/pgSQL in-memory via AST rewriting
-- NO permanent artifacts or database modifications
-- NO PostgreSQL extensions required
-- MUST NOT change semantic behavior of tested code
-
-#### IV. CLI-First Design
-
-- Standalone CLI tool with no runtime dependencies (except PostgreSQL)
-- Configuration via flags, env vars, or config files
-- Clear exit codes for CI/CD integration
-- Familiar to Go developers (`go test`-like UX)
-
-#### V. Coverage Accuracy Over Speed
-
-- Deterministic results (same code → same coverage)
-- NO false positives or negatives
-- Speed optimizations are secondary to correctness
-
-#### VI. Go Development Ergonomics
-
-- Idiomatic Go code patterns
-- Command structure similar to Go toolchain
-- Standard output formats (JSON, LCOV)
-- Clear, actionable error messages
-
-### Non-Goals (Do NOT Implement)
-
-- Database migration management (use external tools)
-- Global schema lifecycle management
-- Assertion libraries (integrate with pgTAP/others)
+- Database migration management
+- Assertion libraries (use pgTAP/others externally)
 - PostgreSQL extensions
 
 ---
 
-## Architecture & Design
+## Architecture
 
-### Key Technologies
-
-- **CLI Framework**: `urfave/cli/v3` (subcommands, flags, env var binding)
-- **SQL Parser**: `pashagolub/pglex` (token-level scanner — NOT pg_query_go/AST-based)
-- **PostgreSQL Driver**: `jackc/pgx/v5` (native protocol, LISTEN/NOTIFY)
-
-### Core Workflows
-
-#### Test Execution Flow
+### Execution Pipeline
 
 ```
-1. Discovery: Find *_test.sql files recursively
-2. Source Discovery: Find co-located .sql files (same directory)
-3. Parsing: Token-split source files with pglex into `[]*Statement`
-4. Instrumentation: Rewrite function bodies to inject NOTIFY calls at statement boundaries
-5. Temp DB Creation: CREATE DATABASE pgcov_test_{timestamp}_{random}
-6. Deployment: Load instrumented sources into temp DB
-7. Execution: Run test file in temp DB
-8. Signal Collection: LISTEN coverage_signal for execution data
-9. Cleanup: DROP DATABASE (automatic artifact removal)
-10. Reporting: Aggregate coverage and generate reports
+1. Discovery   → walk dirs, classify *.sql vs *_test.sql
+2. Parsing     → pglex token scan → []*Statement with byte offsets
+3. Instrumentation → inject PERFORM pg_notify('coverage_signal', '<file>:<start>:<len>')
+                     into PL/pgSQL/SQL function bodies; mark other DDL implicitly covered
+4. Temp DB     → CREATE DATABASE pgcov_test_<yyyymmdd_hhmmss>_<4-byte hex>
+5. Deploy      → execute instrumented SQL in temp DB
+6. Execute     → run the *_test.sql file
+7. Collect     → LISTEN coverage_signal on dedicated pgx.Conn
+8. Cleanup     → DROP DATABASE ... WITH (FORCE)
+9. Report      → aggregate Coverage, write JSON/LCOV/HTML
 ```
 
-#### Coverage Signal Format
+### Coverage Signal Format
 
 ```
 Channel: coverage_signal
-Payload: file:startByteOffset:byteLength
+Payload: <relPath>:<startByteOffset>:<byteLength>
 Example: src/auth.sql:128:42
 ```
 
-See `instrument.ParseSignalID` for the canonical parser. Positions are byte-offsets into the source file, not line numbers.
+Always use `instrument.ParseSignalID` to parse signals — never split manually.
 
-#### Temporary Database Naming
+### Source Scoping
 
-```
-pgcov_test_{timestamp}_{random}
-Example: pgcov_test_20260105_a3f9c2b1
-```
+Each test only sees sources from **its own directory** (non-recursive). `filterSourcesByDirectory` in `runner/executor.go` enforces this. Never pass sources from sibling directories.
 
-### Source File Discovery Rules
+### Key Types
 
-**Co-located with test files** (same directory only):
-
-For each `path/to/dir/test_name_test.sql`:
-
-1. Get parent directory: `path/to/dir/`
-2. Find all `.sql` files in that directory (non-recursive)
-3. Exclude files matching `*_test.sql`
-4. Remaining files are instrumentable sources
-
-**Example**:
-
-```
-myproject/
-├── auth/
-│   ├── authenticate.sql    # ✅ Instrumented when auth_test.sql runs
-│   ├── authorize.sql       # ✅ Instrumented when auth_test.sql runs
-│   └── auth_test.sql       # Test file
-└── users/
-    ├── user_crud.sql       # ✅ Instrumented when user_test.sql runs
-    └── user_test.sql       # Test file
-```
+| Type | Package | Role |
+| --- | --- | --- |
+| `Config` | `pkg/types` | Canonical config struct (aliased in `internal/cli`) |
+| `CoverageSignal` | `pkg/types` | Shared signal type (aliased in `internal/runner`) |
+| `Formatter` | `internal/report` | Interface: `Format`, `FormatString`, `Name` |
+| `Collector` | `internal/coverage` | Thread-safe signal aggregation |
+| `Executor` | `internal/runner` | Orchestrates one test (temp DB + signals) |
+| `WorkerPool` | `internal/runner` | Fans out jobs over buffered channel |
 
 ---
 
@@ -175,73 +103,51 @@ myproject/
 
 ### Prerequisites
 
-1. **Go 1.21+**: `go version`
-2. **C Compiler**:
-   - Linux: `sudo apt-get install build-essential`
-   - macOS: `xcode-select --install`
-   - Windows: MSYS2 + MinGW-w64 (see [BUILD.md](../BUILD.md))
-3. **Docker**: For integration tests (PostgreSQL 13-16)
-4. **PostgreSQL** (optional): Local instance for manual testing
+- **Go 1.24+**
+- **C compiler**: Linux: `build-essential` · macOS: `xcode-select --install` · Windows: MSYS2 + MinGW-w64 (see BUILD.md)
+- **Docker**: For integration tests
 
-### Setup
+### Build & Test
 
 ```bash
-# Clone repository
-git clone https://github.com/cybertec-postgresql/pgcov.git
-cd pgcov
-
-# Install dependencies
-go mod download
-
 # Build
-export CGO_ENABLED=1  # Linux/macOS
-# $env:CGO_ENABLED = "1"  # Windows PowerShell
-go build -o pgcov ./cmd/pgcov
+CGO_ENABLED=1 go build ./cmd/pgcov
 
-# Verify
-./pgcov --version
+# Unit tests (no Docker required)
+go test -short ./...
+
+# All tests including integration (requires Docker)
+go test ./...
+
+# Integration tests only
+go test ./... -run Integration
 ```
 
 ### VS Code Tasks
 
-Use VS Code tasks for common operations:
-
-- **Build pgcov**: `Ctrl+Shift+B` (or `Cmd+Shift+B` on macOS)
-- **Unit Test**: Run tests in current directory
-- **Coverage Report**: Generate HTML coverage report
-- **Run pgcov**: Execute against testdata/simple
-- **Format Code**: Run `go fmt ./...`
-- **Go Vet**: Static analysis with `go vet ./...`
+- **Build pgcov** (`Ctrl+Shift+B`) — `go build ./cmd/pgcov`
+- **Unit Test** — tests in current directory with coverage + tparse
+- **Coverage Report** — `go tool cover -html=coverage.out`
+- **Lint** — `golangci-lint run`
 
 ---
 
 ## Code Standards
 
-### Go Style
-
-- Follow [Effective Go](https://golang.org/doc/effective_go)
-- Use `gofmt` (enforced in CI)
-- Run `go vet` before committing
-- Prefer standard library over dependencies
-- Keep functions small and focused (< 50 lines ideal)
-
 ### Error Handling
 
-```go
-// ✅ Good: Wrap errors with context
-if err != nil {
-    return fmt.Errorf("failed to connect to database %s: %w", dbName, err)
-}
+Always wrap with context:
 
-// ❌ Bad: Generic error without context
-if err != nil {
-    return err
-}
+```go
+// ✅
+return fmt.Errorf("failed to connect to %s: %w", dbName, err)
+// ❌
+return err
 ```
 
 ### Logging
 
-There is **no** `internal/logger` package. Use `fmt.Printf` guarded by a `verbose` flag:
+No logger package. Use `fmt.Printf` guarded by `verbose`:
 
 ```go
 if verbose {
@@ -249,145 +155,60 @@ if verbose {
 }
 ```
 
-### Naming Conventions
+### Naming
 
-- **Files**: `snake_case.go` (e.g., `database_pool.go`)
-- **Test Files**: `*_test.go` (e.g., `database_pool_test.go`)
-- **Packages**: Short, lowercase, no underscores (e.g., `package coverage`)
-- **Interfaces**: Noun or adjective (e.g., `type Executor interface {}`)
-- **Implementations**: Descriptive (e.g., `type ParallelExecutor struct {}`)
-
-### Documentation
-
-- All exported functions/types MUST have godoc comments
-- Start comments with the item name: `// Execute runs the test file...`
-- Include usage examples for complex APIs
-
-```go
-// Execute runs a test file in an isolated temporary database.
-// It returns the test result and any error encountered during execution.
-//
-// Example:
-//
-// result, err := executor.Execute(ctx, testFile)
-// if err != nil {
-//     return fmt.Errorf("test execution failed: %w", err)
-// }
-func (e *Executor) Execute(ctx context.Context, testFile string) (*Result, error) {
-    // ...
-}
-```
+- Files: `snake_case.go`
+- Packages: short, lowercase, no underscores
+- All exported symbols must have godoc comments starting with the symbol name
 
 ---
 
 ## Testing Requirements
 
-### Test Organization
+### Organization
 
-- **Unit Tests**: Alongside source files (`*_test.go`)
-- **Integration Tests**: `internal/*_integration_test.go`
-- **Test Fixtures**: `testdata/` directory
+- **Unit tests**: `*_test.go` alongside source (same package)
+- **Integration tests**: `internal/integration_test.go` (package `integration_test`)
+- **Fixtures**: `testdata/` — simple, plpgsql, edge_cases, isolation, parallel, sqlfunc
 
-### Running Tests
+### Patterns
 
-```bash
-# All tests
-go test ./...
-
-# Specific package
-go test ./internal/parser
-
-# Verbose output
-go test -v ./...
-
-# With coverage
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out
-
-# Integration tests only
-go test ./... -run Integration
-```
-
-### Unit Test Guidelines
-
-- Use table-driven tests for multiple cases
-- Mock external dependencies (database, filesystem)
-- Test error paths explicitly
-- Avoid testing implementation details
-
-**Example**:
+Use table-driven tests. Do not use `require`/`assert` — use stdlib `testing` only.
 
 ```go
-func TestParseSQL(t *testing.T) {
+func TestFoo(t *testing.T) {
     tests := []struct {
         name    string
         input   string
-        want    *AST
+        want    string
         wantErr bool
     }{
-        {"simple select", "SELECT 1", &AST{...}, false},
-        {"syntax error", "SLECT 1", nil, true},
+        {"valid", "SELECT 1", "expected", false},
+        {"empty", "", "", true},
     }
-    
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
-            got, err := ParseSQL(tt.input)
+            got, err := Foo(tt.input)
             if (err != nil) != tt.wantErr {
-                t.Errorf("ParseSQL() error = %v, wantErr %v", err, tt.wantErr)
-                return
+                t.Fatalf("Foo() error = %v, wantErr %v", err, tt.wantErr)
             }
-            if !reflect.DeepEqual(got, tt.want) {
-                t.Errorf("ParseSQL() = %v, want %v", got, tt.want)
+            if got != tt.want {
+                t.Errorf("Foo() = %q, want %q", got, tt.want)
             }
         })
     }
 }
 ```
 
-### Integration Test Guidelines
-
-- Use Docker for PostgreSQL instances (via `testcontainers-go`)
-- Test against multiple PostgreSQL versions (13, 14, 15, 16)
-- Create/destroy test databases for each test
-- Verify actual SQL execution and coverage collection
-
-**Example**:
+Integration tests must skip without Docker:
 
 ```go
-func TestIntegration_RunSimpleTest(t *testing.T) {
+func TestIntegration_Something(t *testing.T) {
     if testing.Short() {
         t.Skip("skipping integration test")
     }
-    
-    // Setup PostgreSQL container
-    pg, err := setupPostgres(t)
-    require.NoError(t, err)
-    defer pg.Cleanup()
-    
-    // Run test
-    result, err := runTest(pg.ConnectionString(), "testdata/simple/math_test.sql")
-    require.NoError(t, err)
-    assert.True(t, result.Passed)
-    assert.Greater(t, result.Coverage, 0.8) // 80% coverage
+    // uses testutil.SetupPostgresContainer(t)
 }
-```
-
-### Test Fixtures
-
-**Location**: `testdata/`
-
-**Structure**:
-
-```
-testdata/
-├── simple/              # Basic test cases
-│   ├── math.sql        # Source file
-│   ├── math_test.sql   # Test file
-│   └── README.md       # Fixture documentation
-├── plpgsql/            # PL/pgSQL-specific tests
-├── edge_cases/         # Error conditions, empty files, etc.
-├── isolation/          # Test isolation verification
-└── parallel/           # Parallel execution tests
 ```
 
 ---
@@ -396,322 +217,86 @@ testdata/
 
 ### Adding a New Command
 
-1. Add command in `internal/cli/`:
+1. Add `internal/cli/mycommand.go` with the action function.
+2. Add an inline `*urfavecli.Command` entry in the `Commands` slice in `cmd/pgcov/main.go`.
+3. Add tests in `internal/cli/mycommand_test.go`.
 
 ```go
-// internal/cli/mycommand.go
-func MyCommand() *cli.Command {
-    return &cli.Command{
-        Name:  "mycommand",
-        Usage: "Does something useful",
-        Flags: []cli.Flag{
-            &cli.StringFlag{Name: "option", Usage: "Option description"},
-        },
-        Action: func(c *cli.Context) error {
-            // Implementation
-            return nil
-        },
-    }
-}
-```
-
-1. Register in `cmd/pgcov/main.go`:
-
-```go
-app := &cli.App{
-    Commands: []*cli.Command{
-        cli.RunCommand(),
-        cli.ReportCommand(),
-        cli.MyCommand(), // Add here
+// cmd/pgcov/main.go — inside Commands slice
+{
+    Name:   "mycommand",
+    Usage:  "Does something useful",
+    Action: myCommandAction,
+    Flags:  []urfavecli.Flag{
+        &urfavecli.StringFlag{Name: "option", Usage: "..."},
     },
-}
+},
 ```
-
-1. Add tests in `internal/cli/mycommand_test.go`
-2. Update documentation in README.md
 
 ### Adding a New Report Format
 
-1. Implement `Reporter` interface:
+1. Implement the `Formatter` interface in `internal/report/myformat.go`:
 
 ```go
-// internal/report/myformat.go
 type MyFormatReporter struct{}
 
-func (r *MyFormatReporter) Generate(coverage *coverage.Coverage) ([]byte, error) {
-    // Format conversion logic
-    return data, nil
-}
+func NewMyFormatReporter() *MyFormatReporter { return &MyFormatReporter{} }
+
+func (r *MyFormatReporter) Format(cov *coverage.Coverage, w io.Writer) error { ... }
+func (r *MyFormatReporter) FormatString(cov *coverage.Coverage) (string, error) { ... }
+func (r *MyFormatReporter) Name() string { return "myformat" }
 ```
 
-1. Register in `internal/report/formatter.go`:
+1. Add a `case` in `GetFormatter` in `internal/report/formatter.go`.
+1. Add `internal/report/myformat_test.go`.
 
-```go
-func NewReporter(format string) (Reporter, error) {
-    switch format {
-    case "json":
-        return &JSONReporter{}, nil
-    case "lcov":
-        return &LCOVReporter{}, nil
-    case "myformat": // Add here
-        return &MyFormatReporter{}, nil
-    default:
-        return nil, fmt.Errorf("unsupported format: %s", format)
-    }
-}
-```
+### Adding a New Config Option
 
-1. Add tests in `internal/report/myformat_test.go`
-2. Update CLI flag documentation
+1. Add field to `pkg/types/types.go` → `Config` struct.
+2. Add flag in `cmd/pgcov/main.go` (the relevant command's `Flags` slice) with `EnvVars: []string{"PGCOV_MY_OPTION"}`.
+3. Wire in `internal/cli/config.go` → `ApplyFlagsToConfig`.
+4. Add validation in `Config.Validate()` in `pkg/types/types.go` if needed.
 
 ### Modifying Instrumentation
 
-**IMPORTANT**: Changes to instrumentation MUST maintain transparency (Principle III).
+**Must maintain Principle III (transparency).**
 
-1. Understand current AST traversal in `internal/instrument/instrumenter.go`
-2. Add new node visitors for additional coverage points
-3. Test with multiple PostgreSQL versions (13-16)
-4. Verify deterministic output (same input → same instrumented code)
-5. Update `specs/001-core-test-runner/research.md` with design rationale
-
-### Adding New Configuration Options
-
-1. Add flag in `internal/cli/config.go`:
-
-```go
-type Config struct {
-    // Existing fields...
-    NewOption string
-}
-
-var configFlags = []cli.Flag{
-    // Existing flags...
-    &cli.StringFlag{
-        Name:    "new-option",
-        Usage:   "Description of new option",
-        EnvVars: []string{"PGCOV_NEW_OPTION"},
-        Value:   "default_value",
-    },
-}
-```
-
-1. Add validation in `LoadConfig()` if needed
-2. Update documentation in README.md and quickstart.md
-3. Add tests for new configuration behavior
+- Token-level rewriting is in `internal/instrument/instrumenter.go` (`instrumentBody`, `instrumentStatement`).
+- Signal ID generation: `FormatSignalID` / `ParseSignalID` in `internal/instrument/location.go`.
+- Test with `testdata/plpgsql/`, `testdata/sqlfunc/`, and `testdata/edge_cases/`.
+- Verify deterministic output (same input → identical instrumented text).
 
 ---
 
-## CI/CD Integration
+## CI/CD
 
-### GitHub Actions Workflow
-
-The project uses GitHub Actions for CI/CD (see `.github/workflows/`):
-
-- **Build**: Verify compilation on Linux, macOS, Windows
-- **Test**: Run unit and integration tests
-- **Lint**: `golangci-lint` with strict rules
-- **Coverage**: Upload to Codecov
-- **Release**: Build binaries for all platforms
-
-### Pre-commit Checks
-
-Before pushing:
+Pre-push checklist:
 
 ```bash
-# Format code
 go fmt ./...
-
-# Run linters
 go vet ./...
 golangci-lint run
-
-# Run tests
-go test ./...
-
-# Build for all platforms (if changing build process)
-GOOS=linux GOARCH=amd64 go build ./cmd/pgcov
-GOOS=darwin GOARCH=amd64 go build ./cmd/pgcov
-GOOS=windows GOARCH=amd64 go build ./cmd/pgcov
+go test -short ./...
 ```
 
-### Commit Message Format
-
-Use conventional commits:
+Commit format (conventional commits):
 
 ```
-feat: Add support for HTML coverage reports
-fix: Correct line number calculation in LCOV output
-docs: Update quickstart with parallel execution examples
-test: Add integration tests for PostgreSQL 16
-refactor: Simplify test discovery logic
-chore: Update dependencies
+feat: add SARIF report format
+fix: correct byte offset in LCOV output
+test: add edge case for empty function body
+refactor: simplify signal collection loop
 ```
 
 ---
 
 ## Troubleshooting
 
-### Build Issues
-
-#### "CGO not enabled"
-
-**Solution**:
-
-```bash
-export CGO_ENABLED=1  # Linux/macOS
-$env:CGO_ENABLED = "1"  # Windows PowerShell
-```
-
-#### "gcc: command not found" (Windows)
-
-**Solution**: Install MSYS2 and add MinGW to PATH:
-
-```powershell
-$env:PATH = "$env:PATH;C:\msys64\mingw64\bin"
-$env:CC = "C:\msys64\mingw64\bin\gcc.exe"
-```
-
-#### "undefined reference to libpg_query"
-
-**Solution**: Clean and rebuild:
-
-```bash
-go clean -cache
-go build ./cmd/pgcov
-```
-
-### Test Issues
-
-#### "no PostgreSQL server running"
-
-**Solution**: Integration tests use Docker. Ensure Docker is running:
-
-```bash
-docker ps
-```
-
-#### "permission denied to create database"
-
-**Solution**: Grant CREATEDB privilege:
-
-```sql
-ALTER USER testuser CREATEDB;
-```
-
-### Runtime Issues
-
-#### "failed to instrument source file"
-
-**Cause**: SQL syntax error or unsupported PostgreSQL feature
-
-**Solution**:
-
-1. Check file syntax using pglex or a local PostgreSQL instance
-2. Verify PostgreSQL version compatibility
-3. Enable verbose logging: `pgcov run --verbose`
-
-#### "test timeout after 30s"
-
-**Solution**: Increase timeout:
-
-```bash
-pgcov run --timeout=60s ./tests/
-```
-
----
-
-## Reference Documentation
-
-### External Resources
-
-- [pglex Documentation](https://github.com/pashagolub/pglex)
-- [pgx Driver Documentation](https://pkg.go.dev/github.com/jackc/pgx/v5)
-- [PostgreSQL SQL Syntax](https://www.postgresql.org/docs/current/sql.html)
-- [LCOV Format Specification](https://linux.die.net/man/1/geninfo)
-
-### Key Packages
-
-- `internal/cli`: Command-line interface handlers
-- `internal/coverage`: Coverage data collection and storage
-- `internal/database`: PostgreSQL connection management
-- `internal/discovery`: Test/source file discovery
-- `internal/instrument`: SQL instrumentation via AST rewriting
-- `internal/parser`: SQL token scanner (pglex)
-- `internal/report`: Coverage report formatters
-- `internal/runner`: Test execution and parallelization
-
----
-
-## Quick Reference
-
-### Build Commands
-
-```bash
-# Development build
-CGO_ENABLED=1 go build -o pgcov ./cmd/pgcov
-
-# Release build
-CGO_ENABLED=1 go build -ldflags="-s -w" -o pgcov ./cmd/pgcov
-
-# Run tests
-go test ./...
-
-# Coverage
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out
-```
-
-### Run Commands
-
-```bash
-# Basic usage
-pgcov run ./tests/
-
-# Recursive discovery
-pgcov run ./...
-
-# Parallel execution
-pgcov run --parallel=4 ./...
-
-# Custom connection
-pgcov run --host=db.example.com --port=5432 --user=pgcov ./...
-
-# With timeout
-pgcov run --timeout=60s ./...
-
-# Verbose output
-pgcov run --verbose ./...
-
-# Generate report
-pgcov report --format=lcov -o coverage.lcov
-```
-
-### PostgreSQL Setup
-
-```bash
-# Environment variables
-export PGHOST=localhost
-export PGPORT=5432
-export PGUSER=postgres
-export PGPASSWORD=yourpassword
-export PGDATABASE=postgres
-
-# Grant privileges
-psql -c "ALTER USER youruser CREATEDB;"
-
-# Verify connection
-psql -h localhost -p 5432 -U postgres -c "SELECT version();"
-```
-
----
-
-## Support
-
-- **Issues**: <https://github.com/cybertec-postgresql/pgcov/issues>
-- **Discussions**: <https://github.com/cybertec-postgresql/pgcov/discussions>
-- **Documentation**: <https://github.com/cybertec-postgresql/pgcov/tree/main/docs>
-
----
-
-**Last Updated**: 2026-01-09  
-**Version**: 1.0.0
+| Symptom | Fix |
+| --- | --- |
+| `CGO not enabled` | `export CGO_ENABLED=1` (Linux/macOS) or `$env:CGO_ENABLED="1"` (PowerShell) |
+| `gcc: command not found` (Windows) | `$env:PATH += ";C:\msys64\mingw64\bin"` and `$env:CC = "C:\msys64\mingw64\bin\gcc.exe"` |
+| Integration tests panic / Docker error | Ensure Docker daemon is running: `docker ps` |
+| `permission denied to create database` | `ALTER USER youruser CREATEDB;` |
+| `failed to instrument source file` | Check SQL syntax; run with `--verbose` for details |
+| Test timeout | Use `--timeout=60s` or increase per-test timeout in config |
