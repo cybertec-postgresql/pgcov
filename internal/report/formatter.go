@@ -42,24 +42,6 @@ func GetFormatter(format FormatType) (Formatter, error) {
 	}
 }
 
-// FormatToWriter formats coverage data to a writer using the specified format
-func FormatToWriter(cov *coverage.Coverage, format FormatType, writer io.Writer) error {
-	formatter, err := GetFormatter(format)
-	if err != nil {
-		return err
-	}
-	return formatter.Format(cov, writer)
-}
-
-// FormatToString formats coverage data to a string using the specified format
-func FormatToString(cov *coverage.Coverage, format FormatType) (string, error) {
-	formatter, err := GetFormatter(format)
-	if err != nil {
-		return "", err
-	}
-	return formatter.FormatString(cov)
-}
-
 // ValidFormat checks if a format string is valid
 func ValidFormat(format string) bool {
 	switch FormatType(format) {

@@ -11,41 +11,6 @@ func FormatSignalID(file string, startPos int, length int, branch string) string
 	return fmt.Sprintf("%s:%d:%d:%s", file, startPos, length, branch)
 }
 
-// TrackPosition creates a new coverage point for a given file, position, and length
-func TrackPosition(file string, startPos int, length int) CoveragePoint {
-	return CoveragePoint{
-		File:     file,
-		StartPos: startPos,
-		Length:   length,
-		Branch:   "",
-		SignalID: FormatSignalID(file, startPos, length, ""),
-	}
-}
-
-// TrackBranchPosition creates a new coverage point for a branch
-func TrackBranchPosition(file string, startPos int, length int, branch string) CoveragePoint {
-	return CoveragePoint{
-		File:     file,
-		StartPos: startPos,
-		Length:   length,
-		Branch:   branch,
-		SignalID: FormatSignalID(file, startPos, length, branch),
-	}
-}
-
-// PositionKey returns a unique key for a coverage point (without branch)
-func PositionKey(file string, startPos int, length int) string {
-	return fmt.Sprintf("%s:%d:%d", file, startPos, length)
-}
-
-// BranchPositionKey returns a unique key for a branch coverage point
-func BranchPositionKey(file string, startPos int, length int, branch string) string {
-	if branch == "" {
-		return PositionKey(file, startPos, length)
-	}
-	return fmt.Sprintf("%s:%d:%d:%s", file, startPos, length, branch)
-}
-
 // ParseSignalID parses a signal ID into file, startPos, length, and optional branch
 func ParseSignalID(signalID string) (file string, startPos int, length int, err error) {
 	// Signal format: file:startPos:length or file:startPos:length:branch
@@ -138,25 +103,4 @@ func parseNumber(s string) (int, error) {
 	return num, nil
 }
 
-// GroupLocationsByFile groups coverage points by file
-func GroupLocationsByFile(locations []CoveragePoint) map[string][]CoveragePoint {
-	grouped := make(map[string][]CoveragePoint)
-	for _, loc := range locations {
-		grouped[loc.File] = append(grouped[loc.File], loc)
-	}
-	return grouped
-}
 
-// GetUniqueFiles returns a list of unique files from coverage points
-func GetUniqueFiles(locations []CoveragePoint) []string {
-	fileSet := make(map[string]bool)
-	for _, loc := range locations {
-		fileSet[loc.File] = true
-	}
-
-	var files []string
-	for file := range fileSet {
-		files = append(files, file)
-	}
-	return files
-}

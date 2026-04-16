@@ -29,12 +29,4 @@ func ClassifyPath(path string) FileType {
 	return ClassifyFile(filepath.Base(path))
 }
 
-// IsTestFile returns true if the file is a test file
-func IsTestFile(filename string) bool {
-	return ClassifyFile(filename) == FileTypeTest
-}
 
-// IsSourceFile returns true if the file is a source file
-func IsSourceFile(filename string) bool {
-	return ClassifyFile(filename) == FileTypeSource
-}

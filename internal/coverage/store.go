@@ -87,22 +87,4 @@ func (s *Store) Path() string {
 	return s.filePath
 }
 
-// SaveCollector is a convenience method to save from a collector
-func SaveCollector(collector *Collector, filePath string) error {
-	store := NewStore(filePath)
-	return store.Save(collector.Coverage())
-}
 
-// LoadToCollector is a convenience method to load into a new collector
-func LoadToCollector(filePath string) (*Collector, error) {
-	store := NewStore(filePath)
-	coverage, err := store.Load()
-	if err != nil {
-		return nil, err
-	}
-
-	collector := NewCollector()
-	collector.coverage = coverage
-
-	return collector, nil
-}

@@ -10,6 +10,16 @@ import (
 	"github.com/cybertec-postgresql/pgcov/internal/parser"
 )
 
+// getCoveragePointBySignal finds a coverage point by its signal ID. Used only in tests.
+func getCoveragePointBySignal(instrumented *InstrumentedSQL, signalID string) *CoveragePoint {
+	for i := range instrumented.Locations {
+		if instrumented.Locations[i].SignalID == signalID {
+			return &instrumented.Locations[i]
+		}
+	}
+	return nil
+}
+
 func TestInstrumentWithLexer(t *testing.T) {
 	sql := `CREATE OR REPLACE FUNCTION get_grade(score INT)
 RETURNS TEXT AS $$
@@ -423,7 +433,7 @@ func TestGetCoveragePointBySignal(t *testing.T) {
 
 	// Test finding a coverage point by signal
 	signal := instrumented.Locations[0].SignalID
-	cp := GetCoveragePointBySignal(instrumented, signal)
+	cp := getCoveragePointBySignal(instrumented, signal)
 	if cp == nil {
 		t.Errorf("GetCoveragePointBySignal() returned nil for signal %q", signal)
 	} else if cp.SignalID != signal {
@@ -431,13 +441,13 @@ func TestGetCoveragePointBySignal(t *testing.T) {
 	}
 
 	// Test non-existent signal
-	cp = GetCoveragePointBySignal(instrumented, "nonexistent:signal")
+	cp = getCoveragePointBySignal(instrumented, "nonexistent:signal")
 	if cp != nil {
 		t.Errorf("GetCoveragePointBySignal() expected nil for nonexistent signal, got %v", cp)
 	}
 
 	// Test returned pointer refers to actual slice element, not a loop-copy
-	cp = GetCoveragePointBySignal(instrumented, signal)
+	cp = getCoveragePointBySignal(instrumented, signal)
 	if cp != &instrumented.Locations[0] {
 		t.Error("GetCoveragePointBySignal() returned pointer to copy, not to original slice element")
 	}

@@ -28,15 +28,6 @@ func Parse(file *discovery.DiscoveredFile) (*ParsedSQL, error) {
 	}, nil
 }
 
-// ParseFile is a convenience function that parses a file path directly
-func ParseFile(filePath string) (*ParsedSQL, error) {
-	file := &discovery.DiscoveredFile{
-		Path: filePath,
-		Type: discovery.ClassifyPath(filePath),
-	}
-	return Parse(file)
-}
-
 // ParseStatements parses SQL text directly and returns statements
 func ParseStatements(sql string) []*Statement {
 	return splitAndClassify(sql)

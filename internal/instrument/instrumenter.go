@@ -23,16 +23,6 @@ func GenerateCoverageInstruments(parsedFiles []*parser.ParsedSQL) ([]*Instrument
 	return instrumented, nil
 }
 
-// GetCoveragePointBySignal finds a coverage point by its signal ID
-func GetCoveragePointBySignal(instrumented *InstrumentedSQL, signalID string) *CoveragePoint {
-	for i := range instrumented.Locations {
-		if instrumented.Locations[i].SignalID == signalID {
-			return &instrumented.Locations[i]
-		}
-	}
-	return nil
-}
-
 // InstrumentWithNotify instruments SQL by injecting NOTIFY calls for coverage tracking
 func GenerateCoverageInstrument(parsed *parser.ParsedSQL) (*InstrumentedSQL, error) {
 	if parsed == nil || parsed.File == nil {
@@ -324,7 +314,6 @@ func findTerminalPos(segmentContent string) int {
 				switch next.Type {
 				case pglex.KNotice, pglex.KWarning, pglex.KInfo, pglex.KLog, pglex.KDebug:
 					// Non-fatal RAISE; continue scanning for a later terminal.
-					break
 				default:
 					return pos // RAISE EXCEPTION, RAISE 'msg', etc.
 				}

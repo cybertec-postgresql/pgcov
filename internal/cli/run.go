@@ -129,9 +129,4 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	return summary.ExitCode(), nil
 }
 
-// PrintVerbose prints a message if verbose mode is enabled
-func PrintVerbose(config *Config, format string, args ...any) {
-	if config.Verbose {
-		fmt.Printf(format+"\n", args...)
-	}
-}
+

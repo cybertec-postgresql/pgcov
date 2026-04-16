@@ -9,6 +9,15 @@ import (
 	"github.com/cybertec-postgresql/pgcov/internal/discovery"
 )
 
+// parseFile is a test helper that parses a file path directly.
+func parseFile(filePath string) (*ParsedSQL, error) {
+	file := &discovery.DiscoveredFile{
+		Path: filePath,
+		Type: discovery.ClassifyPath(filePath),
+	}
+	return Parse(file)
+}
+
 func TestParse_ValidSQL(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -181,7 +190,7 @@ func TestParseFile(t *testing.T) {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
 
-	parsed, err := ParseFile(tmpFile)
+	parsed, err := parseFile(tmpFile)
 	if err != nil {
 		t.Fatalf("ParseFile() error = %v", err)
 	}

@@ -27,15 +27,6 @@ func (e *ConnectionError) Error() string {
 	return msg
 }
 
-// NewConnectionError creates a new ConnectionError
-func NewConnectionError(host string, port int, message string) *ConnectionError {
-	return &ConnectionError{
-		Host:    host,
-		Port:    port,
-		Message: message,
-	}
-}
-
 // Pool wraps pgxpool.Pool with additional functionality
 type Pool struct {
 	*pgxpool.Pool
@@ -106,11 +97,6 @@ func NewPool(ctx context.Context, config *types.Config) (*Pool, error) {
 		Pool:   pool,
 		config: config,
 	}, nil
-}
-
-// Config returns the configuration used by this pool
-func (p *Pool) Config() *types.Config {
-	return p.config
 }
 
 // Close closes the connection pool

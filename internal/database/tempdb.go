@@ -27,7 +27,7 @@ func CreateTempDatabase(ctx context.Context, adminPool *Pool) (*pgxpool.Pool, er
 	}
 
 	// Build connection string for the new database, preserving all original options (sslmode, etc.)
-	config := adminPool.Pool.Config()
+	config := adminPool.Config()
 	config.ConnConfig.Database = dbName
 
 	tempPool, err := pgxpool.NewWithConfig(ctx, config)

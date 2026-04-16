@@ -85,34 +85,6 @@ func (c *Collector) Reset() {
 	c.coverage = NewCoverage()
 }
 
-// Merge merges another coverage collector's data into this one
-func (c *Collector) Merge(other *Collector) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	other.mu.Lock()
-	defer other.mu.Unlock()
-
-	// Merge position hit counts only
-	for file, otherPosHits := range other.coverage.Positions {
-		for posKey, count := range otherPosHits {
-			// Parse position key to get startPos and length
-			var startPos, length int
-			_, err := fmt.Sscanf(posKey, "%d:%d", &startPos, &length)
-			if err != nil {
-				continue // Skip invalid keys
-			}
-
-			if existingCount, exists := c.coverage.Positions[file][posKey]; exists {
-				c.coverage.AddPosition(file, startPos, length, existingCount+count)
-			} else {
-				c.coverage.AddPosition(file, startPos, length, count)
-			}
-		}
-	}
-
-	return nil
-}
-
 // GetFilePositionCoverage returns a copy of position coverage data for a specific file
 func (c *Collector) GetFilePositionCoverage(filePath string) PositionHits {
 	c.mu.Lock()

@@ -131,23 +131,6 @@ func (l *Listener) Close(ctx context.Context) error {
 	return nil
 }
 
-// WaitForSignal waits for a specific signal with timeout
-func (l *Listener) WaitForSignal(ctx context.Context, timeout time.Duration) (*types.CoverageSignal, error) {
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-
-	select {
-	case signal := <-l.signals:
-		return &signal, nil
-	case err := <-l.errors:
-		return nil, err
-	case <-timer.C:
-		return nil, fmt.Errorf("timeout waiting for signal")
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
 // CollectSignals collects all signals until context is cancelled or timeout
 func (l *Listener) CollectSignals(ctx context.Context, timeout time.Duration) ([]types.CoverageSignal, error) {
 	var signals []types.CoverageSignal
@@ -173,17 +156,4 @@ func (l *Listener) CollectSignals(ctx context.Context, timeout time.Duration) ([
 	}
 }
 
-// Ping verifies the listener connection is alive
-func (l *Listener) Ping(ctx context.Context) error {
-	if l.conn == nil || l.conn.IsClosed() {
-		return fmt.Errorf("connection is closed")
-	}
-	return l.conn.Ping(ctx)
-}
 
-// SendTestNotification sends a test notification (for debugging)
-func SendTestNotification(ctx context.Context, conn *pgconn.PgConn, channel string, payload string) error {
-	sql := fmt.Sprintf("NOTIFY %s, '%s'", channel, payload)
-	_, err := conn.Exec(ctx, sql).ReadAll()
-	return err
-}

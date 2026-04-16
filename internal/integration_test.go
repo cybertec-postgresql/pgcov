@@ -169,6 +169,7 @@ func TestEndToEndWithTestcontainers(t *testing.T) {
 		// Phase 3: Coverage data structure should exist (even if empty without instrumentation)
 		if cov == nil {
 			t.Fatal("Coverage data is nil")
+			return
 		}
 
 		totalPercent := cov.TotalPositionCoveragePercent()
@@ -625,7 +626,7 @@ func TestTestIndependence(t *testing.T) {
 
 	// Verify isolation using the isolation validator
 	t.Log("Verifying stateless execution...")
-	err = runner.VerifyStatelessExecution(run1, run2)
+	err = verifyStatelessExecution(run1, run2)
 	if err != nil {
 		t.Fatalf("Stateless execution verification failed: %v", err)
 	}
@@ -935,4 +936,40 @@ func TestSQLFunctionInstrumentation(t *testing.T) {
 
 		t.Log("All SQL functions return correct values with CTE-based instrumentation")
 	})
+}
+
+// verifyStatelessExecution verifies that running the same test twice produces
+// identical results, confirming there is no shared state between runs.
+func verifyStatelessExecution(run1, run2 *runner.TestRun) error {
+	if run1.Status != run2.Status {
+		return fmt.Errorf("test status differs: %s vs %s", run1.Status, run2.Status)
+	}
+	if run1.Database == run2.Database {
+		return fmt.Errorf("tests used the same database: %s", run1.Database)
+	}
+	if len(run1.CoverageSigs) != len(run2.CoverageSigs) {
+		return fmt.Errorf("coverage signal count differs: %d vs %d",
+			len(run1.CoverageSigs), len(run2.CoverageSigs))
+	}
+
+	signals1 := make(map[string]bool, len(run1.CoverageSigs))
+	for _, sig := range run1.CoverageSigs {
+		signals1[sig.SignalID] = true
+	}
+	signals2 := make(map[string]bool, len(run2.CoverageSigs))
+	for _, sig := range run2.CoverageSigs {
+		signals2[sig.SignalID] = true
+	}
+
+	for sigID := range signals1 {
+		if !signals2[sigID] {
+			return fmt.Errorf("signal %s present in first run but not second", sigID)
+		}
+	}
+	for sigID := range signals2 {
+		if !signals1[sigID] {
+			return fmt.Errorf("signal %s present in second run but not first", sigID)
+		}
+	}
+	return nil
 }
