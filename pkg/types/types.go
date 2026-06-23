@@ -15,6 +15,14 @@ type Config struct {
 	Timeout     time.Duration // Per-test timeout
 	Parallelism int           // Max concurrent tests (1 = sequential)
 
+	// SetupFiles are SQL files (globs allowed) executed verbatim — without
+	// instrumentation and without being treated as sources-under-test — in each
+	// test's temporary database BEFORE the instrumented sources are loaded.
+	// Use this to create prerequisite schema/objects that the sources under test
+	// depend on but that live outside the test directory (e.g. shared "global"
+	// schemas). Order is preserved.
+	SetupFiles []string
+
 	// Output
 	CoverageFile string // Coverage data output path
 	Verbose      bool   // Enable debug logging
@@ -96,4 +104,3 @@ type CoverageSignal struct {
 	SignalID  string    // Matches CoveragePoint.SignalID
 	Timestamp time.Time // When signal received
 }
-

@@ -3,6 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/cybertec-postgresql/pgcov/internal/coverage"
@@ -12,6 +15,45 @@ import (
 	"github.com/cybertec-postgresql/pgcov/internal/parser"
 	"github.com/cybertec-postgresql/pgcov/internal/runner"
 )
+
+// loadSetupScripts expands the given file patterns (globs allowed) and reads
+// each matched .sql file into a SetupScript. Patterns are processed in the
+// order given; files matched by a single glob are sorted for determinism.
+func loadSetupScripts(patterns []string) ([]runner.SetupScript, error) {
+	var scripts []runner.SetupScript
+	seen := make(map[string]bool)
+
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid setup pattern %q: %w", pattern, err)
+		}
+		if len(matches) == 0 {
+			// Treat a non-glob path that doesn't exist as an explicit error so
+			// typos surface immediately rather than silently skipping setup.
+			return nil, fmt.Errorf("setup file/pattern matched nothing: %q", pattern)
+		}
+		sort.Strings(matches)
+		for _, m := range matches {
+			abs, err := filepath.Abs(m)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve setup file %q: %w", m, err)
+			}
+			if seen[abs] {
+				continue
+			}
+			seen[abs] = true
+
+			data, err := os.ReadFile(m)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read setup file %q: %w", m, err)
+			}
+			scripts = append(scripts, runner.SetupScript{Name: m, SQL: string(data)})
+		}
+	}
+
+	return scripts, nil
+}
 
 // Run executes the test runner workflow
 func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
@@ -76,6 +118,19 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	// Step 6: Execute tests (parallel or sequential based on config)
 	executor := runner.NewExecutor(pool, config.Timeout, config.Verbose)
 
+	// Load any prerequisite setup scripts (globs expanded, order preserved) so
+	// they run in each test's temp database before the instrumented sources.
+	if len(config.SetupFiles) > 0 {
+		scripts, err := loadSetupScripts(config.SetupFiles)
+		if err != nil {
+			return 1, err
+		}
+		if config.Verbose {
+			fmt.Printf("Loaded %d setup script(s)\n", len(scripts))
+		}
+		executor.SetSetupScripts(scripts)
+	}
+
 	var testRuns []*runner.TestRun
 	if config.Parallelism > 1 {
 		// Use parallel execution
@@ -128,5 +183,3 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	// Return appropriate exit code
 	return summary.ExitCode(), nil
 }
-
-

@@ -39,6 +39,10 @@ func main() {
 						Name:  "coverage-file",
 						Usage: "Coverage data output path",
 					},
+					&urfavecli.StringSliceFlag{
+						Name:  "setup",
+						Usage: "SQL file(s) (globs allowed) run verbatim in each test's temp database before loading instrumented sources. Use for prerequisite schema the sources depend on. Repeatable; order preserved.",
+					},
 					&urfavecli.BoolFlag{
 						Name:  "verbose",
 						Usage: "Enable debug output",
@@ -87,9 +91,10 @@ func runCommand(ctx context.Context, cmd *urfavecli.Command) error {
 	timeout := cmd.Duration("timeout")
 	parallel := cmd.Int("parallel")
 	coverageFile := cmd.String("coverage-file")
+	setupFiles := cmd.StringSlice("setup")
 	verbose := cmd.Bool("verbose")
 
-	cli.ApplyFlagsToConfig(config, connection, timeout, parallel, coverageFile, verbose)
+	cli.ApplyFlagsToConfig(config, connection, timeout, parallel, coverageFile, verbose, setupFiles)
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {
