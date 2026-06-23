@@ -17,6 +17,18 @@ type Executor struct {
 	pool    *database.Pool
 	timeout time.Duration
 	verbose bool
+
+	// setupSQL holds prerequisite SQL scripts (in order) executed verbatim in
+	// each temp database before the instrumented sources are loaded. They are
+	// NOT instrumented and do NOT contribute to coverage.
+	setupSQL []SetupScript
+}
+
+// SetupScript is a named chunk of prerequisite SQL run before sources load.
+// Name is used only for diagnostics (typically the file path).
+type SetupScript struct {
+	Name string
+	SQL  string
 }
 
 // NewExecutor creates a new test executor
@@ -26,6 +38,12 @@ func NewExecutor(pool *database.Pool, timeout time.Duration, verbose bool) *Exec
 		timeout: timeout,
 		verbose: verbose,
 	}
+}
+
+// SetSetupScripts registers prerequisite SQL scripts to run (in order) in every
+// test's temp database before the instrumented sources are loaded.
+func (e *Executor) SetSetupScripts(scripts []SetupScript) {
+	e.setupSQL = scripts
 }
 
 // Execute runs a single test file and collects coverage
@@ -174,6 +192,30 @@ func (e *Executor) executeTestWorkflow(ctx context.Context, testRun *TestRun, so
 	defer listener.Close(ctx)
 	if e.verbose {
 		fmt.Println("[DEBUG] Listener started")
+	}
+
+	// Step 3b: Run prerequisite setup scripts verbatim (uninstrumented). These
+	// create schema/objects the sources under test depend on but that live
+	// outside the test directory. They run before sources load and do not
+	// contribute to coverage.
+	if len(e.setupSQL) > 0 {
+		if e.verbose {
+			fmt.Printf("[DEBUG] Step 3b: Running %d setup script(s)...\n", len(e.setupSQL))
+		}
+		setupConn, err := tempPool.Acquire(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to acquire connection for setup: %w", err)
+		}
+		for _, s := range e.setupSQL {
+			if e.verbose {
+				fmt.Printf("[DEBUG] Running setup script: %s\n", s.Name)
+			}
+			if _, err := setupConn.Exec(ctx, s.SQL); err != nil {
+				setupConn.Release()
+				return fmt.Errorf("failed to run setup script %s: %w", s.Name, err)
+			}
+		}
+		setupConn.Release()
 	}
 
 	if e.verbose {

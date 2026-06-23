@@ -16,7 +16,7 @@ func TestApplyFlagsToConfig_EmptyFlagsPreserveConfig(t *testing.T) {
 	}
 
 	// Apply empty flags (should not change config)
-	ApplyFlagsToConfig(cfg, "", 0, 0, "", false)
+	ApplyFlagsToConfig(cfg, "", 0, 0, "", false, nil)
 
 	if cfg.ConnectionString != originalConnString {
 		t.Errorf("empty flag should not change connection string")
@@ -26,6 +26,17 @@ func TestApplyFlagsToConfig_EmptyFlagsPreserveConfig(t *testing.T) {
 	}
 	if cfg.Parallelism != 2 {
 		t.Errorf("zero flag should not change parallelism")
+	}
+	if len(cfg.SetupFiles) != 0 {
+		t.Errorf("nil setup flag should not set setup files")
+	}
+}
+
+func TestApplyFlagsToConfig_SetupFiles(t *testing.T) {
+	cfg := &Config{}
+	ApplyFlagsToConfig(cfg, "", 0, 0, "", false, []string{"a.sql", "glob/*.sql"})
+	if len(cfg.SetupFiles) != 2 {
+		t.Fatalf("expected 2 setup files, got %d", len(cfg.SetupFiles))
 	}
 }
 
