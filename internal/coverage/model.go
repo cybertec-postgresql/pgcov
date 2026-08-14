@@ -2,6 +2,7 @@ package coverage
 
 import (
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -86,12 +87,13 @@ func ParsePositionKey(posKey string) (startPos int, length int, err error) {
 	return
 }
 
-// GetFiles returns a list of all files with coverage data
+// GetFiles returns a sorted list of all files with coverage data
 func (c *Coverage) GetFiles() []string {
 	var files []string
 	for file := range c.Positions {
 		files = append(files, file)
 	}
+	sort.Strings(files)
 	return files
 }
 

@@ -3,6 +3,7 @@ package coverage
 import (
 	"fmt"
 	"maps"
+	"sort"
 	"sync"
 
 	"github.com/cybertec-postgresql/pgcov/internal/instrument"
@@ -98,7 +99,7 @@ func (c *Collector) GetFilePositionCoverage(filePath string) PositionHits {
 	return clone
 }
 
-// GetFileList returns a list of all files with coverage data
+// GetFileList returns a sorted list of all files with coverage data
 func (c *Collector) GetFileList() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -107,6 +108,7 @@ func (c *Collector) GetFileList() []string {
 	for file := range c.coverage.Positions {
 		files = append(files, file)
 	}
+	sort.Strings(files)
 	return files
 }
 

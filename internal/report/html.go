@@ -29,12 +29,7 @@ type positionRange struct {
 
 // Format formats coverage data as HTML and writes to the writer
 func (r *HTMLReporter) Format(cov *coverage.Coverage, writer io.Writer) error {
-	// Sort files for deterministic output
-	var files []string
-	for file := range cov.Positions {
-		files = append(files, file)
-	}
-	sort.Strings(files)
+	files := cov.GetFiles()
 
 	// Write HTML header
 	if err := r.writeHeader(cov, files, writer); err != nil {
