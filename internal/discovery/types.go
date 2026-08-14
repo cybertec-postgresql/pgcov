@@ -14,8 +14,9 @@ type DiscoveredFile struct {
 type FileType int
 
 const (
-	FileTypeTest   FileType = iota // Matches *_test.sql
-	FileTypeSource                 // Does not match *_test.sql
+	FileTypeTest    FileType = iota // Matches *_test.sql
+	FileTypeSource                  // Does not match *_test.sql
+	FileTypeUnknown                 // Files that are not .sql
 )
 
 // String returns a string representation of FileType
@@ -25,6 +26,8 @@ func (ft FileType) String() string {
 		return "test"
 	case FileTypeSource:
 		return "source"
+	case FileTypeUnknown:
+		return "unknown"
 	default:
 		return "unknown"
 	}

@@ -12,7 +12,7 @@ func ClassifyFile(filename string) FileType {
 
 	// Check if it's a SQL file
 	if !strings.HasSuffix(lower, ".sql") {
-		return FileTypeSource // Non-SQL files are treated as source (edge case)
+		return FileTypeUnknown
 	}
 
 	// Test files match *_test.sql pattern
