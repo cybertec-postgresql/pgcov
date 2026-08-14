@@ -228,14 +228,14 @@ func TestEndToEndWithTestcontainers(t *testing.T) {
 		_, _ = cli.Run(ctx, config, testDir)
 
 		// Test JSON report
-		err := cli.Report(t.Context(), config.CoverageFile, "json", "-")
+		err := cli.Report(t.Context(), config.CoverageFile, "json", "-", "")
 		if err != nil {
 			t.Fatalf("Failed to generate JSON report: %v", err)
 		}
 
 		// Test LCOV report
 		lcovFile := filepath.Join(t.TempDir(), "coverage.lcov")
-		err = cli.Report(t.Context(), config.CoverageFile, "lcov", lcovFile)
+		err = cli.Report(t.Context(), config.CoverageFile, "lcov", lcovFile, "")
 		if err != nil {
 			t.Fatalf("Failed to generate LCOV report: %v", err)
 		}

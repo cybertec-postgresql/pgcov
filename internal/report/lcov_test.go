@@ -2,6 +2,7 @@ package report
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -344,5 +345,88 @@ func TestLCOVReporter_HitCountFormat(t *testing.T) {
 	}
 	if !strings.Contains(output, ",9999") {
 		t.Error("Missing 9999 hit count")
+	}
+}
+
+func TestLCOVReporter_BaseDir(t *testing.T) {
+	// Build a source file with known line breaks; coverage positions are
+	// chosen so they land on distinct lines. The reporter must read the
+	baseDir := t.TempDir()
+	srcDir := baseDir + "/queries"
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	srcPath := "queries/users.sql"
+	srcContent := "CREATE TABLE users (\n    id INT PRIMARY KEY,\n    name TEXT NOT NULL,\n    email TEXT UNIQUE\n);\n"
+	if err := os.WriteFile(baseDir+"/"+srcPath, []byte(srcContent), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	cov := &coverage.Coverage{
+		Version:   "1.0",
+		Timestamp: time.Now(),
+		Positions: map[string]coverage.PositionHits{
+			// Positions are placed so line-number conversion yields 1 and 2.
+			// Byte 0  -> line 1 (start of "CREATE TABLE users ("); byte 22
+			// lands inside line 2 (the "id INT PRIMARY KEY," line).
+			srcPath: {
+				"0:5":   2,
+				"22:10": 1,
+			},
+		},
+	}
+
+	// Switch to a directory where neither the relative source path nor
+	// anything else the LCOV reporter tries to read will exist.
+	otherCwd := t.TempDir()
+	prevCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(otherCwd); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prevCwd) })
+
+	// Without BaseDir the reporter falls back to position-as-line, so
+	// the output contains DA:0,... and DA:30,... instead of line numbers.
+	noBase := NewLCOVReporter()
+	var noBaseBuf bytes.Buffer
+	if err := noBase.Format(cov, &noBaseBuf); err != nil {
+		t.Fatalf("Format without BaseDir: %v", err)
+	}
+	noBaseOut := noBaseBuf.String()
+	if !strings.Contains(noBaseOut, "DA:0,2") {
+		t.Errorf("expected byte-position fallback to emit DA:0,2; got: %s", noBaseOut)
+	}
+	if !strings.Contains(noBaseOut, "DA:22,1") {
+		t.Errorf("expected byte-position fallback to emit DA:22,1; got: %s", noBaseOut)
+	}
+
+	// With BaseDir the reporter reads the source and converts positions
+	// to real line numbers, then sums per line.
+	withBase := NewLCOVReporter()
+	withBase.SetBaseDir(baseDir)
+	out, err := withBase.FormatString(cov)
+	if err != nil {
+		t.Fatalf("FormatString with BaseDir: %v", err)
+	}
+	if !strings.Contains(out, "DA:2,1") {
+		t.Errorf("expected line 2 with 1 hit; got: %s", out)
+	}
+	if !strings.Contains(out, "SF:"+srcPath) {
+		t.Errorf("missing SF: header; got: %s", out)
+	}
+	if !strings.Contains(out, "DA:1,2") {
+		t.Errorf("expected line 1 with 2 hits; got: %s", out)
+	}
+	// The presence of DA:1,... and DA:2,... (real line numbers, not the
+	// raw byte positions 0 and 22) is sufficient evidence that source
+	// resolution via BaseDir succeeded; the byte-position fallback would
+	// have produced DA:0,... and DA:22,... instead.
+	if !strings.Contains(out, "LF:2") {
+		t.Errorf("expected LF:2 (two lines found); got: %s", out)
+	}
+	if !strings.Contains(out, "LH:2") {
+		t.Errorf("expected LH:2 (two lines hit); got: %s", out)
 	}
 }

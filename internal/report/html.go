@@ -13,11 +13,25 @@ import (
 )
 
 // HTMLReporter formats coverage data as HTML
-type HTMLReporter struct{}
+type HTMLReporter struct {
+	// BaseDir, when non-empty, is the directory relative source paths are
+	// resolved against before falling back to the process CWD. It is used by
+	// readSourceFileAsString to locate .sql sources referenced in coverage
+	// positions when the report command runs from a different directory than
+	// `pgcov run` was invoked from.
+	BaseDir string
+}
 
 // NewHTMLReporter creates a new HTML reporter
 func NewHTMLReporter() *HTMLReporter {
 	return &HTMLReporter{}
+}
+
+// SetBaseDir configures the base directory used to resolve relative source
+// paths when reading files from disk. Passing an empty string clears it and
+// falls back to the process CWD.
+func (r *HTMLReporter) SetBaseDir(dir string) {
+	r.BaseDir = dir
 }
 
 // positionRange represents a byte range with coverage info
@@ -296,21 +310,42 @@ func (r *HTMLReporter) renderSourceWithPositions(sourceText string, ranges []pos
 	return nil
 }
 
-// readSourceFileAsString reads a source file and returns its content as string
+// readSourceFileAsString reads a source file and returns its content as string.
+// When BaseDir is set on the reporter, relative source paths are resolved
+// against BaseDir first, then the process CWD. Absolute paths are tried as-is
+// before falling back to CWD-relative resolution.
 func (r *HTMLReporter) readSourceFileAsString(filePath string) (string, error) {
-	// Try to open the file - handle both absolute and relative paths
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		// Try with current working directory
-		cwd, _ := os.Getwd()
-		altPath := filepath.Join(cwd, filePath)
-		data, err = os.ReadFile(altPath)
-		if err != nil {
-			return "", fmt.Errorf("cannot open file: %w", err)
+	candidates := r.sourcePathCandidates(filePath)
+	var lastErr error
+	for _, p := range candidates {
+		data, err := os.ReadFile(p)
+		if err == nil {
+			return string(data), nil
 		}
+		lastErr = err
 	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no candidates generated")
+	}
+	return "", fmt.Errorf("cannot open file: %w", lastErr)
+}
 
-	return string(data), nil
+// sourcePathCandidates returns the ordered list of paths to try when reading a
+// source file. Absolute paths skip base-dir resolution.
+func (r *HTMLReporter) sourcePathCandidates(filePath string) []string {
+	if filepath.IsAbs(filePath) {
+		return []string{filePath}
+	}
+	var out []string
+	if r.BaseDir != "" {
+		out = append(out, filepath.Join(r.BaseDir, filePath))
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		out = append(out, filepath.Join(cwd, filePath))
+	} else {
+		out = append(out, filePath)
+	}
+	return out
 }
 
 // getCoverageClass returns the CSS class for coverage styling
