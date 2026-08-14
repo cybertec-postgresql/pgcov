@@ -8,12 +8,23 @@ import (
 	"github.com/pashagolub/pglex"
 )
 
-// GenerateCoverageInstruments instruments multiple parsed SQL files
-func GenerateCoverageInstruments(parsedFiles []*parser.ParsedSQL) ([]*InstrumentedSQL, error) {
+// DefaultChannel is the legacy, well-known NOTIFY channel name used before
+// per-run unique channels were introduced.  Tests and external callers that
+// want the original behaviour may pass this to GenerateCoverageInstrument /
+// GenerateCoverageInstruments; production code should use a channel generated
+// per run (see internal/cli.Run) to avoid collisions with user code NOTIFYing
+// on the same name inside the temp database.
+const DefaultChannel = "pgcov"
+
+// GenerateCoverageInstruments instruments multiple parsed SQL files.
+// The channel argument is the PostgreSQL NOTIFY channel name injected into
+// every pg_notify(...) call; it must use an identifier-safe charset (lowercase
+// letters, digits, underscore) so it can be safely interpolated into SQL.
+func GenerateCoverageInstruments(parsedFiles []*parser.ParsedSQL, channel string) ([]*InstrumentedSQL, error) {
 	var instrumented []*InstrumentedSQL
 
 	for _, parsed := range parsedFiles {
-		inst, err := GenerateCoverageInstrument(parsed)
+		inst, err := GenerateCoverageInstrument(parsed, channel)
 		if err != nil {
 			return nil, fmt.Errorf("failed to instrument %s: %w", parsed.File.Path, err)
 		}
@@ -23,8 +34,10 @@ func GenerateCoverageInstruments(parsedFiles []*parser.ParsedSQL) ([]*Instrument
 	return instrumented, nil
 }
 
-// InstrumentWithNotify instruments SQL by injecting NOTIFY calls for coverage tracking
-func GenerateCoverageInstrument(parsed *parser.ParsedSQL) (*InstrumentedSQL, error) {
+// GenerateCoverageInstrument instruments a single parsed SQL file by injecting
+// NOTIFY calls for coverage tracking on the given channel.  See
+// GenerateCoverageInstruments for the channel charset contract.
+func GenerateCoverageInstrument(parsed *parser.ParsedSQL, channel string) (*InstrumentedSQL, error) {
 	if parsed == nil || parsed.File == nil {
 		return nil, fmt.Errorf("parsed SQL or file is nil")
 	}
@@ -40,7 +53,7 @@ func GenerateCoverageInstrument(parsed *parser.ParsedSQL) (*InstrumentedSQL, err
 		}
 
 		// Instrument the statement and collect coverage points
-		instrumentedSQL, stmtLocations := instrumentStatement(stmt, relPath)
+		instrumentedSQL, stmtLocations := instrumentStatement(stmt, relPath, channel)
 		locations = append(locations, stmtLocations...)
 		instrumentedStatements = append(instrumentedStatements, instrumentedSQL)
 	}
@@ -56,7 +69,7 @@ func GenerateCoverageInstrument(parsed *parser.ParsedSQL) (*InstrumentedSQL, err
 }
 
 // instrumentStatement instruments a single statement with line-by-line coverage
-func instrumentStatement(stmt *parser.Statement, filePath string) (string, []CoveragePoint) {
+func instrumentStatement(stmt *parser.Statement, filePath string, channel string) (string, []CoveragePoint) {
 	var locations []CoveragePoint
 
 	// For functions/procedures, determine the language from the parsed statement
@@ -64,10 +77,10 @@ func instrumentStatement(stmt *parser.Statement, filePath string) (string, []Cov
 	case parser.StmtFunction, parser.StmtProcedure, parser.StmtDO:
 		switch stmt.Language {
 		case "plpgsql":
-			instrumented, locs := instrumentBody(stmt, filePath, true, false)
+			instrumented, locs := instrumentBody(stmt, filePath, true, false, channel)
 			return instrumented, locs
 		case "sql":
-			instrumented, locs := instrumentBody(stmt, filePath, false, true)
+			instrumented, locs := instrumentBody(stmt, filePath, false, true, channel)
 			return instrumented, locs
 		default:
 			// Unknown language, mark as implicitly covered
@@ -92,11 +105,13 @@ func instrumentStatement(stmt *parser.Statement, filePath string) (string, []Cov
 // For PL/pgSQL (skipToBegin=true), tokens before the first BEGIN are skipped.
 // For SQL functions (skipToBegin=false), instrumentation starts immediately.
 // When useCTE is true, coverage signals are injected as a CTE prefix
-// (WITH _pgcov_signal AS (SELECT pg_notify(...)) <original statement>)
+// (WITH _pgcov_signal AS (SELECT pg_notify(<channel>, ...)) <original statement>)
 // instead of a standalone statement, avoiding extra result sets that break
 // SQL-language function return types.
-// When useCTE is false, signals use PERFORM pg_notify(...) (PL/pgSQL).
-func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, useCTE bool) (string, []CoveragePoint) {
+// When useCTE is false, signals use PERFORM pg_notify(<channel>, ...) (PL/pgSQL).
+// The channel argument must be an identifier-safe string (lowercase letters,
+// digits, underscore) — the caller is responsible for this contract.
+func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, useCTE bool, channel string) (string, []CoveragePoint) {
 	bodyContent := stmt.Body
 	if bodyContent == "" {
 		return stmt.RawSQL, nil
@@ -165,8 +180,8 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, u
 			// SQL-language functions: inject coverage signal as a CTE
 			// prefix so we don't produce an extra result set that would
 			// conflict with the function's declared return type (B6).
-			ctePrefix := fmt.Sprintf("WITH _pgcov_signal AS (SELECT pg_notify('pgcov', '%s')) ",
-				escapedSignal)
+			ctePrefix := fmt.Sprintf("WITH _pgcov_signal AS (SELECT pg_notify('%s', '%s')) ",
+				channel, escapedSignal)
 			instrumentedBody.WriteString(ctePrefix)
 			instrumentedBody.WriteString(segText)
 			lastWrittenPos = segEnd
@@ -178,8 +193,8 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, u
 			// when termPos > 0 it is nested inside a control structure
 			// (e.g. IF … THEN RETURN …).
 			termIndent := indentOf(segText[termPos:])
-			notifyCall := fmt.Sprintf("%sPERFORM pg_notify('pgcov', '%s');",
-				termIndent, escapedSignal)
+			notifyCall := fmt.Sprintf("%sPERFORM pg_notify('%s', '%s');",
+				termIndent, channel, escapedSignal)
 			instrumentedBody.WriteString(segText[:termPos])
 			fmt.Fprintf(&instrumentedBody, "%s\n", notifyCall)
 			instrumentedBody.WriteString(segText[termPos:])
@@ -196,8 +211,8 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, u
 			} else {
 				lastWrittenPos = segEnd
 			}
-			notifyCall := fmt.Sprintf("%sPERFORM pg_notify('pgcov', '%s');",
-				indent, escapedSignal)
+			notifyCall := fmt.Sprintf("%sPERFORM pg_notify('%s', '%s');",
+				indent, channel, escapedSignal)
 			fmt.Fprintf(&instrumentedBody, "\n%s", notifyCall)
 		}
 	}
@@ -341,7 +356,6 @@ func getIndentation(line string) string {
 // markStatementLinesAsCovered creates coverage points for all non-comment lines
 // Uses AST node location to determine the statement boundaries rather than string operations
 func markStatementLinesAsCovered(stmt *parser.Statement, filePath string) []CoveragePoint {
-	var locations []CoveragePoint
 
 	// For DDL/DML statements, mark the entire statement as implicitly covered
 	// Use the byte position from the parsed statement
@@ -356,7 +370,7 @@ func markStatementLinesAsCovered(stmt *parser.Statement, filePath string) []Cove
 		ImplicitCoverage: true, // DDL/DML are implicitly covered on successful execution
 	}
 	cp.SignalID = FormatSignalID(cp.File, cp.StartPos, cp.Length, cp.Branch)
-	locations = append(locations, cp)
+	locations := []CoveragePoint{cp}
 
 	return locations
 }

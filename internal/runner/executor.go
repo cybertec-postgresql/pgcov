@@ -14,9 +14,10 @@ import (
 
 // Executor orchestrates test execution with coverage tracking
 type Executor struct {
-	pool    *database.Pool
-	timeout time.Duration
-	verbose bool
+	pool            *database.Pool
+	timeout         time.Duration
+	verbose         bool
+	coverageChannel string
 
 	// setupSQL holds prerequisite SQL scripts (in order) executed verbatim in
 	// each temp database before the instrumented sources are loaded. They are
@@ -31,12 +32,15 @@ type SetupScript struct {
 	SQL  string
 }
 
-// NewExecutor creates a new test executor
-func NewExecutor(pool *database.Pool, timeout time.Duration, verbose bool) *Executor {
+// NewExecutor creates a new test executor.  coverageChannel is the PostgreSQL
+// NOTIFY channel name used both for the instrumented sources (pg_notify calls)
+// and for the LISTEN side; both must agree or no signals will be received.
+func NewExecutor(pool *database.Pool, timeout time.Duration, verbose bool, coverageChannel string) *Executor {
 	return &Executor{
-		pool:    pool,
-		timeout: timeout,
-		verbose: verbose,
+		pool:            pool,
+		timeout:         timeout,
+		verbose:         verbose,
+		coverageChannel: coverageChannel,
 	}
 }
 
@@ -185,7 +189,7 @@ func (e *Executor) executeTestWorkflow(ctx context.Context, testRun *TestRun, so
 		fmt.Println("[DEBUG] Step 3: Starting LISTEN for coverage signals...")
 	}
 	// Step 3: Start LISTEN for coverage signals
-	listener, err := database.NewListener(ctx, tempPool, "pgcov")
+	listener, err := database.NewListener(ctx, tempPool, e.coverageChannel)
 	if err != nil {
 		return fmt.Errorf("failed to start listener: %w", err)
 	}

@@ -1,6 +1,7 @@
 package instrument
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,7 +43,7 @@ $$ LANGUAGE plpgsql;`
 	}
 	stmt := stmts[0]
 
-	instrumentedSQL, coveragePoints := instrumentBody(stmt, "test.sql", true, false)
+	instrumentedSQL, coveragePoints := instrumentBody(stmt, "test.sql", true, false, DefaultChannel)
 	if instrumentedSQL == "" {
 		t.Error("instrumentWithLexer() returned empty instrumented SQL")
 	}
@@ -77,7 +78,7 @@ func TestInstrument_BasicSQL(t *testing.T) {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := GenerateCoverageInstrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed, DefaultChannel)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -121,7 +122,7 @@ $$ LANGUAGE plpgsql;`
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := GenerateCoverageInstrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed, DefaultChannel)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -160,7 +161,7 @@ $$ LANGUAGE sql;`
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := GenerateCoverageInstrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed, DefaultChannel)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -216,7 +217,7 @@ $$ LANGUAGE sql;`
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := GenerateCoverageInstrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed, DefaultChannel)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -252,7 +253,7 @@ SELECT 3;`
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := GenerateCoverageInstrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed, DefaultChannel)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -283,7 +284,7 @@ func TestInstrument_EmptyFile(t *testing.T) {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := GenerateCoverageInstrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed, DefaultChannel)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -314,7 +315,7 @@ func TestInstrument_CommentsOnly(t *testing.T) {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := GenerateCoverageInstrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed, DefaultChannel)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -345,7 +346,7 @@ func TestInstrument_SignalIDFormat(t *testing.T) {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := GenerateCoverageInstrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed, DefaultChannel)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -392,7 +393,7 @@ func TestInstrumentBatch(t *testing.T) {
 		parsedFiles = append(parsedFiles, parsed)
 	}
 
-	instrumented, err := GenerateCoverageInstruments(parsedFiles)
+	instrumented, err := GenerateCoverageInstruments(parsedFiles, DefaultChannel)
 	if err != nil {
 		t.Fatalf("InstrumentBatch() error = %v", err)
 	}
@@ -422,7 +423,7 @@ func TestGetCoveragePointBySignal(t *testing.T) {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	instrumented, err := GenerateCoverageInstrument(parsed)
+	instrumented, err := GenerateCoverageInstrument(parsed, DefaultChannel)
 	if err != nil {
 		t.Fatalf("Instrument() error = %v", err)
 	}
@@ -454,7 +455,7 @@ func TestGetCoveragePointBySignal(t *testing.T) {
 }
 
 func TestInstrument_NilInput(t *testing.T) {
-	_, err := GenerateCoverageInstrument(nil)
+	_, err := GenerateCoverageInstrument(nil, DefaultChannel)
 	if err == nil {
 		t.Error("Instrument() expected error for nil input, got nil")
 	}
@@ -517,7 +518,7 @@ func TestInstrument_DifferentStatementTypes(t *testing.T) {
 				t.Fatalf("Parse() error = %v", err)
 			}
 
-			instrumented, err := GenerateCoverageInstrument(parsed)
+			instrumented, err := GenerateCoverageInstrument(parsed, DefaultChannel)
 			if err != nil {
 				t.Fatalf("Instrument() error = %v", err)
 			}
@@ -529,3 +530,89 @@ func TestInstrument_DifferentStatementTypes(t *testing.T) {
 		})
 	}
 }
+
+
+// TestInstrument_CustomChannel_PLpgSQL verifies that the channel name passed to
+// GenerateCoverageInstrument (and threaded through instrumentStatement /
+// instrumentBody) appears verbatim in the injected pg_notify PERFORM calls.
+func TestInstrument_CustomChannel_PLpgSQL(t *testing.T) {
+	const ch = "pgcov_abcdef01"
+	sql := `CREATE OR REPLACE FUNCTION add_numbers(a INT, b INT)
+RETURNS INT AS $$
+BEGIN
+	RETURN a + b;
+END;
+$$ LANGUAGE plpgsql;`
+
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "func.sql")
+	if err := os.WriteFile(tmpFile, []byte(sql), 0644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	file := &discovery.DiscoveredFile{
+		Path:         tmpFile,
+		RelativePath: "func.sql",
+		Type:         discovery.FileTypeSource,
+	}
+
+	parsed, err := parser.Parse(file)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	instrumented, err := GenerateCoverageInstrument(parsed, ch)
+	if err != nil {
+		t.Fatalf("Instrument() error = %v", err)
+	}
+
+	want := fmt.Sprintf("PERFORM pg_notify('%s',", ch)
+	if !strings.Contains(instrumented.InstrumentedText, want) {
+		t.Errorf("expected instrumented SQL to use custom channel %q, got:\n%s", ch, instrumented.InstrumentedText)
+	}
+	if strings.Contains(instrumented.InstrumentedText, "pg_notify('pgcov',") {
+		t.Errorf("custom channel was ignored -- legacy 'pgcov' channel found in output")
+	}
+}
+
+// TestInstrument_CustomChannel_SQLFunction verifies that the channel argument
+// is used in the CTE form (WITH _pgcov_signal AS (SELECT pg_notify(<channel>, ...)))
+// for SQL-language functions.
+func TestInstrument_CustomChannel_SQLFunction(t *testing.T) {
+	const ch = "pgcov_12345678"
+	sql := `CREATE OR REPLACE FUNCTION double_val(x INT)
+RETURNS INT AS $$
+	SELECT x * 2;
+$$ LANGUAGE sql;`
+
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "sqlfunc.sql")
+	if err := os.WriteFile(tmpFile, []byte(sql), 0644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	file := &discovery.DiscoveredFile{
+		Path:         tmpFile,
+		RelativePath: "sqlfunc.sql",
+		Type:         discovery.FileTypeSource,
+	}
+
+	parsed, err := parser.Parse(file)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	instrumented, err := GenerateCoverageInstrument(parsed, ch)
+	if err != nil {
+		t.Fatalf("Instrument() error = %v", err)
+	}
+
+	want := fmt.Sprintf("WITH _pgcov_signal AS (SELECT pg_notify('%s',", ch)
+	if !strings.Contains(instrumented.InstrumentedText, want) {
+		t.Errorf("expected CTE prefix %q in instrumented SQL, got:\n%s", want, instrumented.InstrumentedText)
+	}
+	if strings.Contains(instrumented.InstrumentedText, "pg_notify('pgcov',") {
+		t.Errorf("custom channel was ignored -- legacy 'pgcov' channel found in output")
+	}
+}
+
