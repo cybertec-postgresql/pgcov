@@ -55,7 +55,7 @@ func (c *Collector) AddSignal(signal runner.CoverageSignal) error {
 
 // addSignalUnsafe adds a signal without locking (internal use when lock is already held)
 func (c *Collector) addSignalUnsafe(signal runner.CoverageSignal) error {
-	// Parse signal ID to extract file, startPos, length, and branch
+	// Parse signal ID to extract file, startPos, and length
 	file, startPos, length, err := instrument.ParseSignalID(signal.SignalID)
 	if err != nil {
 		return fmt.Errorf("invalid signal ID: %w", err)
