@@ -97,6 +97,24 @@ func main() {
 					},
 				},
 			},
+			{
+				Name:      "init",
+				Usage:     "Generate a commented test scaffold for a source SQL file",
+				ArgsUsage: "<source.sql>",
+				Action:    initCommand,
+				Flags: []urfavecli.Flag{
+					&urfavecli.StringFlag{
+						Name:        "output",
+						Aliases:     []string{"o"},
+						Usage:       "Output path for the scaffold (default: sibling <stem>_test.sql)",
+						DefaultText: "<source_dir>/<stem>_test.sql",
+					},
+					&urfavecli.BoolFlag{
+						Name:  "force",
+						Usage: "Overwrite the output file if it already exists",
+					},
+				},
+			},
 		},
 	}
 
@@ -162,4 +180,26 @@ func mergeCommand(ctx context.Context, cmd *urfavecli.Command) error {
 	output := cmd.String("output")
 	inputs := cmd.Args().Slice()
 	return cli.Merge(ctx, inputs, output)
+}
+
+// initCommand handles the 'pgcov init' command.
+//
+// It generates a commented test scaffold for an existing source SQL file,
+// using the lexer-driven extraction in internal/cli to find CREATE
+// [OR REPLACE] FUNCTION statements and emit a commented call template for
+// each. The default target path is the sibling <stem>_test.sql.
+func initCommand(_ context.Context, cmd *urfavecli.Command) error {
+	source := cmd.Args().First()
+	if source == "" {
+		return fmt.Errorf("usage: pgcov init <source.sql> [--output PATH] [--force]")
+	}
+	output := cmd.String("output")
+	force := cmd.Bool("force")
+
+	outPath, err := cli.Init(source, output, force)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "Scaffold written to %s\n", outPath)
+	return nil
 }
