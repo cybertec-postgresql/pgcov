@@ -159,10 +159,9 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, u
 			File:             filePath,
 			StartPos:         absoluteStartPos,
 			Length:           len(segText),
-			Branch:           "",
 			ImplicitCoverage: false,
 		}
-		cp.SignalID = FormatSignalID(cp.File, cp.StartPos, cp.Length, cp.Branch)
+		cp.SignalID = FormatSignalID(cp.File, cp.StartPos, cp.Length)
 		locations = append(locations, cp)
 
 		// Determine indentation from the first non-empty line.
@@ -366,10 +365,9 @@ func markStatementLinesAsCovered(stmt *parser.Statement, filePath string) []Cove
 		File:             filePath,
 		StartPos:         bytePos,
 		Length:           stmtLength,
-		Branch:           "",
 		ImplicitCoverage: true, // DDL/DML are implicitly covered on successful execution
 	}
-	cp.SignalID = FormatSignalID(cp.File, cp.StartPos, cp.Length, cp.Branch)
+	cp.SignalID = FormatSignalID(cp.File, cp.StartPos, cp.Length)
 	locations := []CoveragePoint{cp}
 
 	return locations

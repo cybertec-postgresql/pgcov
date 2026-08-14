@@ -2,68 +2,33 @@ package instrument
 
 import "fmt"
 
-// FormatSignalID generates a signal ID for a coverage point
-// Format: {file}:{startPos}:{length} or {file}:{startPos}:{length}:{branch}
-func FormatSignalID(file string, startPos int, length int, branch string) string {
-	if branch == "" {
-		return fmt.Sprintf("%s:%d:%d", file, startPos, length)
-	}
-	return fmt.Sprintf("%s:%d:%d:%s", file, startPos, length, branch)
+// FormatSignalID generates a signal ID for a coverage point.
+// Format: {file}:{startPos}:{length}
+func FormatSignalID(file string, startPos int, length int) string {
+	return fmt.Sprintf("%s:%d:%d", file, startPos, length)
 }
 
-// ParseSignalID parses a signal ID into file, startPos, length, and optional branch
+// ParseSignalID parses a signal ID into file, startPos, and length.
+// Signal format: file:startPos:length
+// Note: file path may contain colons on Windows (C:\path\to\file.sql), so the
+// tail is anchored and only the last two colons are treated as separators.
 func ParseSignalID(signalID string) (file string, startPos int, length int, err error) {
-	// Signal format: file:startPos:length or file:startPos:length:branch
-	// Note: file path may contain colons on Windows (C:\path\to\file.sql)
-
-	// Find the last colons from the end
-	// We need to find: lastColon (branch separator if present), secondLastColon (length), thirdLastColon (startPos)
+	// Find the last two colons from the end.
 	colons := []int{}
 	for i := len(signalID) - 1; i >= 0; i-- {
 		if signalID[i] == ':' {
 			colons = append(colons, i)
-			if len(colons) >= 3 {
+			if len(colons) >= 2 {
 				break
 			}
 		}
 	}
 
 	if len(colons) < 2 {
-		return "", 0, 0, fmt.Errorf("invalid signal ID format (expected at least 3 parts): %s", signalID)
+		return "", 0, 0, fmt.Errorf("invalid signal ID format (expected 3 parts): %s", signalID)
 	}
 
-	// Check if there's a branch (four parts)
-	if len(colons) >= 3 {
-		// Could be file:startPos:length:branch
-		// colons[0] = lastColon, colons[1] = secondLast, colons[2] = thirdLast
-
-		// Try to parse as file:startPos:length:branch first
-		thirdLastColon := colons[2]
-		secondLastColon := colons[1]
-		lastColon := colons[0]
-
-		file = signalID[:thirdLastColon]
-		startPosStr := signalID[thirdLastColon+1 : secondLastColon]
-		lengthStr := signalID[secondLastColon+1 : lastColon]
-
-		// Try to parse startPos and length
-		var startPosVal, lengthVal int
-		_, parseErr1 := fmt.Sscanf(startPosStr, "%d", &startPosVal)
-		_, parseErr2 := fmt.Sscanf(lengthStr, "%d", &lengthVal)
-
-		if parseErr1 == nil && parseErr2 == nil {
-			// Successfully parsed as file:startPos:length:branch
-			if startPosVal < 0 {
-				return "", 0, 0, fmt.Errorf("start position must be non-negative, got %d", startPosVal)
-			}
-			if lengthVal < 0 {
-				return "", 0, 0, fmt.Errorf("length must be non-negative, got %d", lengthVal)
-			}
-			return file, startPosVal, lengthVal, nil
-		}
-	}
-
-	// Format: file:startPos:length (no branch)
+	// Format: file:startPos:length
 	// colons[0] = lastColon, colons[1] = secondLast
 	secondLastColon := colons[1]
 	lastColon := colons[0]
@@ -72,15 +37,14 @@ func ParseSignalID(signalID string) (file string, startPos int, length int, err 
 	startPosStr := signalID[secondLastColon+1 : lastColon]
 	lengthStr := signalID[lastColon+1:]
 
-	var parseErr error
-	startPos, parseErr = parseNumber(startPosStr)
-	if parseErr != nil {
-		return "", 0, 0, fmt.Errorf("invalid start position in signal ID %s: %w", signalID, parseErr)
+	startPos, err = parseNumber(startPosStr)
+	if err != nil {
+		return "", 0, 0, fmt.Errorf("invalid start position in signal ID %s: %w", signalID, err)
 	}
 
-	length, parseErr = parseNumber(lengthStr)
-	if parseErr != nil {
-		return "", 0, 0, fmt.Errorf("invalid length in signal ID %s: %w", signalID, parseErr)
+	length, err = parseNumber(lengthStr)
+	if err != nil {
+		return "", 0, 0, fmt.Errorf("invalid length in signal ID %s: %w", signalID, err)
 	}
 
 	if startPos < 0 {
@@ -102,5 +66,3 @@ func parseNumber(s string) (int, error) {
 	}
 	return num, nil
 }
-
-
