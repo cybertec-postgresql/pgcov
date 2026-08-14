@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -21,7 +22,7 @@ func CreateTempDatabase(ctx context.Context, adminPool *Pool) (*pgxpool.Pool, er
 	randomSuffix := hex.EncodeToString(randomBytes)
 	dbName := fmt.Sprintf("pgcov_test_%s_%s", timestamp, randomSuffix)
 
-	_, err := adminPool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", dbName))
+	_, err := adminPool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", pgx.Identifier{dbName}.Sanitize()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary database: %w", err)
 	}
@@ -32,7 +33,7 @@ func CreateTempDatabase(ctx context.Context, adminPool *Pool) (*pgxpool.Pool, er
 
 	tempPool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
-		_, _ = adminPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+		_, _ = adminPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", pgx.Identifier{dbName}.Sanitize()))
 		return nil, fmt.Errorf("failed to connect to temp database: %w", err)
 	}
 
@@ -45,6 +46,6 @@ func DestroyTempDatabase(ctx context.Context, adminPool *Pool, tempPool *pgxpool
 		return nil
 	}
 	tempPool.Close()
-	_, err := adminPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s WITH (FORCE)", tempPool.Config().ConnConfig.Database))
+	_, err := adminPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s WITH (FORCE)", pgx.Identifier{tempPool.Config().ConnConfig.Database}.Sanitize()))
 	return err
 }
