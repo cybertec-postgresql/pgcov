@@ -267,6 +267,30 @@ func TestCollector_GetFileList(t *testing.T) {
 	}
 }
 
+// TestCollector_GetFileList_Sorted pins the contract that GetFileList returns
+// its result in lexicographic order regardless of insertion order, since
+// callers depend on this for deterministic report output.
+func TestCollector_GetFileList_Sorted(t *testing.T) {
+	c := NewCollector()
+	now := time.Now()
+	// Insert in non-alphabetical order so a naive map-iteration implementation
+	// would have a real chance of returning something else.
+	for _, name := range []string{"zeta.sql", "alpha.sql", "mike.sql", "beta.sql"} {
+		_ = c.AddSignal(runner.CoverageSignal{SignalID: name + ":0:10", Timestamp: now})
+	}
+
+	files := c.GetFileList()
+	want := []string{"alpha.sql", "beta.sql", "mike.sql", "zeta.sql"}
+	if len(files) != len(want) {
+		t.Fatalf("GetFileList() returned %d files, want %d (%v)", len(files), len(want), files)
+	}
+	for i, f := range files {
+		if f != want[i] {
+			t.Errorf("GetFileList()[%d] = %q, want %q", i, f, want[i])
+		}
+	}
+}
+
 func TestCollector_Coverage(t *testing.T) {
 	c := NewCollector()
 
