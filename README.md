@@ -6,128 +6,96 @@ PostgreSQL test runner and coverage tool
 
 ## Overview
 
-pgcov is a Go-based CLI tool that discovers `*_test.sql` files, instruments SQL/PL/pgSQL source code for coverage tracking, executes tests in isolated temporary databases, and generates coverage reports in JSON and LCOV formats.
+pgcov is a pure-Go CLI tool that discovers `*_test.sql` files, instruments PL/pgSQL and SQL function bodies for statement-level coverage tracking, executes tests in isolated temporary databases, and generates coverage reports in JSON, LCOV, and HTML formats. It talks to PostgreSQL directly over the wire protocol via `pgx/v5` — no `psql`, no server extensions, no CGO.
 
 ## Features
 
-- 🧪 **Automatic Test Discovery**: Finds `*_test.sql` files and co-located source files
-- 🔒 **Complete Test Isolation**: Each test runs in a temporary database
-- 📊 **Coverage Tracking**: Statement-level coverage via SQL instrumentation
-- 📈 **Multiple Report Formats**: JSON and LCOV output for CI/CD integration
-- ⚡ **Parallel Execution**: Optional concurrent test execution with `--parallel` flag
-- 🎯 **PostgreSQL Native**: Direct protocol access via pgx, no external dependencies
+- 🧪 **Automatic Test Discovery**: Recursively finds `*_test.sql` files and the source files co-located with them
+- 🔒 **Complete Test Isolation**: Each test runs in its own temporary database (`pgcov_test_<timestamp>_<random>`), dropped after the run
+- 📊 **Coverage Tracking**: Statement-level coverage via `pg_notify` instrumentation signals captured over `LISTEN`/`NOTIFY`
+- 📈 **Multiple Report Formats**: JSON, LCOV, and HTML output for CI/CD integration
+- ⚡ **Parallel Execution**: Optional concurrent test execution with the `--parallel` flag
+- 🐘 **PostgreSQL Native**: Direct protocol access via `pgx/v5`, no external CLI tools
+- 🪶 **Pure Go**: SQL is parsed with `pashagolub/pglex`; a plain `go build` works on every platform, no C toolchain needed
 
 ## Prerequisites
 
-- **Go**: 1.21 or later (for building)
-- **C Compiler**: Required for CGO (GCC on Linux, MinGW-w64 on Windows)
-- **PostgreSQL**: 13 or later (running and accessible)
-- **Permissions**: CREATEDB privilege for test isolation
-
-### C Compiler Setup
-
-**Linux/macOS**:
-
-```bash
-# Ubuntu/Debian
-sudo apt-get install build-essential
-
-# macOS (Xcode Command Line Tools)
-xcode-select --install
-
-# Fedora/RHEL
-sudo dnf install gcc
-```
-
-**Windows**:
-
-- Install [MSYS2](https://www.msys2.org/)
-- Open MSYS2 terminal and run:
-
-  ```bash
-  pacman -S mingw-w64-x86_64-gcc
-  ```
-
-- Add `C:\msys64\mingw64\bin` to your PATH
+- **Go**: 1.25 or later (for building)
+- **PostgreSQL**: 13 or later, running and accessible (the server version is checked on connect)
+- **Permissions**: The database user needs the `CREATEDB` privilege for test isolation
 
 ## Installation
 
 ### Building from Source
 
-**Linux/macOS**:
+```bash
+git clone https://github.com/cybertec-postgresql/pgcov.git
+cd pgcov
+go build -o pgcov ./cmd/pgcov
+```
+
+### Install to `GOPATH/bin`
 
 ```bash
-# Clone repository
-git clone https://github.com/cybertec-postgresql/pgcov.git
-cd pgcov
-
-# Enable CGO and build
-export CGO_ENABLED=1
-go build -o pgcov ./cmd/pgcov
-
-# (Optional) Install to PATH
-go install ./cmd/pgcov
+go install github.com/cybertec-postgresql/pgcov/cmd/pgcov@latest
 ```
 
-**Windows (PowerShell) - Manual Build**:
-
-```powershell
-# Clone repository
-git clone https://github.com/cybertec-postgresql/pgcov.git
-cd pgcov
-
-# Enable CGO and set compiler
-$env:CGO_ENABLED = "1"
-$env:CC = "C:\msys64\mingw64\bin\gcc.exe"
-$env:PATH = "$env:PATH;C:\msys64\mingw64\bin"
-
-# Build
-go build -o pgcov.exe .\cmd\pgcov
-```
-
-### Why CGO is Required
-
-pgcov uses `pg_query_go` which wraps the PostgreSQL query parser (libpg_query) written in C. This provides native PostgreSQL SQL parsing capabilities but requires CGO to be enabled during compilation.
+pgcov is pure Go — there is no CGO requirement and no C compiler involved.
 
 ## Quick Start
 
-### 1. Configure PostgreSQL Connection
+### 1. Connect to PostgreSQL
+
+Pass a connection string to every `pgcov run` invocation (URI or keyword/value format):
 
 ```bash
-export PGHOST=localhost
-export PGPORT=5432
-export PGUSER=postgres
-export PGPASSWORD=yourpassword
-export PGDATABASE=postgres
+pgcov run . --connection "postgresql://postgres:yourpassword@localhost:5432/postgres"
+
+# or keyword/value format
+pgcov run . --connection "host=localhost port=5432 user=postgres password=yourpassword dbname=postgres"
 ```
+
+Fields omitted from the connection string fall back to the standard `PG*` environment variables (`PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, ...) and libpq defaults, handled by `pgx`.
 
 ### 2. Create Test Files
 
-Test files must match `*_test.sql` pattern and be co-located with source files:
+Test files must match the `*_test.sql` pattern and be co-located with the source files they exercise:
 
 ```
 myproject/
 ├── auth/
 │   ├── authenticate.sql      # Source (will be instrumented)
-│   └── auth_test.sql          # Test
+│   └── auth_test.sql         # Test
 ```
 
 ### 3. Run Tests
 
+Discovery is recursive from the given path — there is no `./...` syntax:
+
 ```bash
-# Current directory
-pgcov run .
+# Current directory (recurses into subdirectories)
+pgcov run . --connection "..."
 
-# Recursive (Go-style)
-pgcov run ./...
+# Specific directory (also recurses)
+pgcov run ./tests/ --connection "..."
+```
 
-# Specific directory
-pgcov run ./tests/
+On success pgcov prints a summary and persists the raw coverage data:
+
+```
+Tests:    3 passed, 0 failed, 3 total
+Coverage: 87.50%
+Time:     1.234s
+
+Coverage data written to .pgcov/coverage.json
 ```
 
 ### 4. Generate Coverage Reports
 
 ```bash
+# JSON (default format) to stdout
+pgcov report
+
 # HTML format (human-readable)
 pgcov report --format=html -o coverage.html
 
@@ -140,72 +108,70 @@ pgcov report --format=lcov -o coverage.lcov
 ### Commands
 
 ```bash
-# Run tests and collect coverage
-pgcov run [path]
-
-# Generate coverage report
-pgcov report [--format=json|lcov|html] [-o output-file]
-
-# Show help
-pgcov help [command]
-
-# Show version
-pgcov --version
+pgcov run [path] [flags]    # Run tests and collect coverage (path defaults to .)
+pgcov report [flags]        # Generate a coverage report from saved coverage data
+pgcov help [command]        # Show help
+pgcov --version             # Show version
 ```
 
-### Configuration Flags
+### `pgcov run` flags
 
-**Connection**:
+| Flag | Default | Description |
+|---|---|---|
+| `--connection`, `-c` | *(required)* | PostgreSQL connection string (URI or keyword/value); omitted fields fall back to `PG*` environment variables |
+| `--timeout` | `30s` | Per-test timeout (`10s`, `1m`, `90s`) |
+| `--parallel` | `1` | Maximum concurrent tests; `1` = sequential, values above `100` are rejected |
+| `--coverage-file` | `.pgcov/coverage.json` | Coverage data output path |
+| `--setup` | — | SQL file(s) — globs allowed — run verbatim in each test's temporary database before the instrumented sources are loaded. Repeatable; order preserved |
+| `--verbose` | `false` | Enable debug output |
 
-- `--host`: PostgreSQL host (default: `localhost`)
-- `--port`: PostgreSQL port (default: `5432`, valid range: 1-65535)
-- `--user`: PostgreSQL user (default: current user)
-- `--password`: PostgreSQL password
-- `--database`: Template database (default: `postgres`)
+### `pgcov report` flags
 
-**Execution**:
+| Flag | Default | Description |
+|---|---|---|
+| `--format` | `json` | Output format: `json`, `lcov`, or `html` |
+| `--output`, `-o` | `-` (stdout) | Output file path (`-` writes to stdout) |
+| `--coverage-file` | `.pgcov/coverage.json` | Coverage data input path |
 
-- `--timeout`: Per-test timeout (default: `30s`, format: `10s`, `1m`, `90s`)
-- `--parallel`: Concurrent tests (default: `1`, valid range: 1-100)
-- `--verbose`: Enable debug output
+### Setup scripts (`--setup`)
 
-**Output**:
+Each test only deploys sources from its own directory into its temporary database. When sources depend on shared or "global" schema living elsewhere, load it with `--setup`. Setup scripts run verbatim — no instrumentation, not counted as covered source — in every test's temporary database before the instrumented sources:
 
-- `--coverage-file`: Coverage data path (default: `.pgcov/coverage.json`)
+```bash
+pgcov run . --connection "..." \
+  --setup "schema/global.sql" \
+  --setup "shared_types/*.sql"
+```
 
-### Environment Variables
+Glob matches are sorted for determinism, the flag is repeatable, and pattern order is preserved. A pattern that matches nothing is an error.
 
-pgcov respects standard PostgreSQL environment variables:
+### Exit Codes
 
-- `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`
-
-**Configuration Priority** (highest to lowest):
-
-1. Command-line flags (e.g., `--host`)
-2. Environment variables (e.g., `PGHOST`)
-3. Default values
+| Code | Meaning |
+|---|---|
+| `0` | All tests passed |
+| `1` | Test failures, timeouts, or runtime errors |
+| `2` | Invalid configuration |
 
 ### Configuration Validation
 
-pgcov validates all configuration values and provides helpful error messages:
+pgcov validates the configuration up front and reports actionable errors:
 
 ```bash
-# Invalid port
-$ pgcov run --port=99999 .
-Error: configuration error for port: invalid port number: 99999
+# Missing connection string
+$ pgcov run .
+Error: configuration error for connection: PostgreSQL connection string is required
 
-Suggestion: Port must be between 1 and 65535. Default PostgreSQL port is 5432.
-Set via --port flag or PGPORT environment variable.
+Suggestion: Set via --connection flag or standard PG* environment variables (PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE).
 
 # Invalid parallelism
-$ pgcov run --parallel=0 .
-Error: configuration error for parallel: parallelism must be at least 1, got: 0
+$ pgcov run . --connection "..." --parallel=-1
+Error: configuration error for parallel: parallelism must be at least 1, got: -1
 
-Suggestion: Use --parallel=N where N is number of tests to run concurrently.
-Use 1 for sequential execution.
+Suggestion: Use --parallel=N where N is number of tests to run concurrently. Use 1 for sequential execution.
 
 # Invalid timeout
-$ pgcov run --timeout=-5s .
+$ pgcov run . --connection "..." --timeout=-5s
 Error: configuration error for timeout: timeout must be positive
 
 Suggestion: Use --timeout flag with format like '30s', '1m', '90s'. Default is 30s.
@@ -228,19 +194,18 @@ BEGIN
     IF NOT authenticate(1) THEN
         RAISE EXCEPTION 'Test failed: User 1 should authenticate';
     END IF;
-    
+
     IF authenticate(999) THEN
         RAISE EXCEPTION 'Test failed: Invalid user should not authenticate';
     END IF;
-    
+
     RAISE NOTICE 'All tests passed';
 END;
 $$;
 ```
 
 ### Source File Structure
-
-Source files in the same directory as test files will be automatically instrumented:
+Source files in the same directory as test files are automatically instrumented:
 
 ```sql
 -- authenticate.sql
@@ -264,187 +229,96 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
-        image: postgres:15
+        image: postgres:16
         env:
           POSTGRES_PASSWORD: postgres
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
         ports:
           - 5432:5432
-    
+
     steps:
-      - uses: actions/checkout@v3
-      
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
         with:
-          go-version: '1.21'
-      
+          go-version: '1.25'
+
       - name: Install pgcov
         run: go install github.com/cybertec-postgresql/pgcov/cmd/pgcov@latest
-      
+
       - name: Run tests
-        env:
-          PGHOST: localhost
-          PGPORT: 5432
-          PGUSER: postgres
-          PGPASSWORD: postgres
-        run: pgcov run ./...
-      
+        run: pgcov run . --connection "postgresql://postgres:postgres@localhost:5432/postgres"
+
       - name: Generate LCOV report
         run: pgcov report --format=lcov -o coverage.lcov
-      
+
       - name: Upload coverage
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           files: coverage.lcov
 ```
 
+See [examples/ci-integration](./examples/ci-integration) for GitHub Actions and GitLab CI variants.
+
 ## Architecture
 
-- **CLI Layer**: Command routing and user interface (`urfave/cli/v3`)
-- **Discovery Layer**: Test and source file discovery (filesystem traversal)
-- **Parser Layer**: SQL parsing and AST access (`pg_query_go`)
-- **Instrumentation Layer**: AST rewriting with coverage injection
-- **Database Layer**: PostgreSQL connections and temporary databases (`pgx/v5`)
-- **Runner Layer**: Test execution orchestration and isolation
-- **Coverage Layer**: Signal collection and aggregation (LISTEN/NOTIFY)
-- **Reporter Layer**: Output formatting (HTML, JSON, LCOV)
+- **CLI Layer**: `run` and `report` subcommands and flag wiring (`urfave/cli/v3`), `cmd/pgcov`
+- **Discovery Layer**: Recursive filesystem scan; files ending in `_test.sql` are tests, all other `.sql` files are sources, and each test is scoped to sources from its own directory
+- **Parser Layer**: Pure-Go SQL statement splitting and classification via `pashagolub/pglex`
+- **Instrumentation Layer**: Statements inside PL/pgSQL function bodies get a `PERFORM pg_notify('pgcov', '<relPath>:<startOffset>:<byteLength>')` coverage signal; statements in SQL-language functions are wrapped in a `WITH _pgcov_signal AS (SELECT pg_notify(...))` CTE; all other DDL/DML counts as implicitly covered
+- **Database Layer**: One temporary database per test (`pgcov_test_<yyyymmdd_hhmmss>_<random hex>`), created from the configured server and dropped after the run (`pgx/v5`)
+- **Runner Layer**: Sequential executor, or a worker pool when `--parallel` is greater than 1; a dedicated connection `LISTEN`s on the `pgcov` channel for coverage signals during each test
+- **Coverage Layer**: Signals are aggregated into per-file byte-range hit counts; every instrumented position is seeded with 0 hits so uncovered branches show up in reports
+- **Reporter Layer**: Output formatting for JSON (default), LCOV, and HTML
 
 ## Development
 
 ### Running Tests
 
-The project includes comprehensive integration tests that use testcontainers to spin up a PostgreSQL instance.
-
-**Linux/macOS**:
+Unit tests need nothing but Go. Integration tests use testcontainers-go and require a running Docker daemon (they start a `postgres:16-alpine` container):
 
 ```bash
-# Enable CGO
-export CGO_ENABLED=1
-
-# Run all tests
+# All tests
 go test ./...
 
-# Run with verbose output
+# Verbose output
 go test -v ./...
 
-# Run specific test
-go test -v ./internal -run TestEndToEndWithTestcontainers
+# A specific integration test
+go test -v ./internal/ -run TestEndToEndWithTestcontainers
 
-# Run with timeout (useful for integration tests)
+# Longer timeout (integration tests pull and start containers)
 go test -timeout 5m ./...
 
-# Run tests with coverage
+# With Go coverage
 go test -cover ./...
 ```
 
-**Windows (PowerShell)**:
-
-```powershell
-# Enable CGO and set compiler
-$env:CGO_ENABLED = "1"
-$env:CC = "C:\msys64\mingw64\bin\gcc.exe"
-$env:PATH = "$env:PATH;C:\msys64\mingw64\bin"
-
-# Run all tests
-go test .\...
-
-# Run with verbose output
-go test -v .\...
-
-# Run specific test
-go test -v .\internal -run TestEndToEndWithTestcontainers
-
-# Run with timeout
-go test -timeout 5m .\...
-
-# Run tests with coverage
-go test -cover .\...
-```
+Other integration tests in the same package: `TestRunnerIsolation`, `TestOrderIndependence`, `TestTestIndependence`, `TestSQLFunctionInstrumentation`.
 
 ### Building
 
-**Linux/macOS**:
-
 ```bash
 # Development build
-export CGO_ENABLED=1
 go build -o pgcov ./cmd/pgcov
 
 # Release build with optimizations
 go build -ldflags="-s -w" -o pgcov ./cmd/pgcov
 
-# Format code
+# Format and lint
 go fmt ./...
-
-# Lint
 go vet ./...
-
-# Clean build cache
-go clean -cache
+golangci-lint run   # matches CI
 ```
 
-**Windows (PowerShell)**:
-
-```powershell
-# Development build
-$env:CGO_ENABLED = "1"
-$env:CC = "C:\msys64\mingw64\bin\gcc.exe"
-$env:PATH = "$env:PATH;C:\msys64\mingw64\bin"
-go build -o pgcov.exe .\cmd\pgcov
-
-# Release build with optimizations
-go build -ldflags="-s -w" -o pgcov.exe .\cmd\pgcov
-
-# Format code
-go fmt .\...
-
-# Lint
-go vet .\...
-
-# Clean build cache
-go clean -cache
-```
-
-### Test Requirements
-
-**Docker**: Integration tests use testcontainers-go which requires Docker to be running:
-
-- Linux: Docker Engine
-- macOS: Docker Desktop
-- Windows: Docker Desktop with WSL2 backend
-
-**PostgreSQL Version**: Tests verify PostgreSQL 13+ compatibility using the `postgres:16-alpine` image.
-
-### Troubleshooting Build Issues
-
-**CGO errors on Linux**:
-
-```bash
-# Install build tools
-sudo apt-get update
-sudo apt-get install build-essential
-
-# Verify GCC is available
-gcc --version
-```
-
-**CGO errors on Windows**:
-
-```powershell
-# Verify GCC is in PATH
-gcc --version
-
-# If not found, ensure MSYS2 MinGW64 is in PATH:
-$env:PATH = "$env:PATH;C:\msys64\mingw64\bin"
-```
-
-**Missing DLL errors on Windows**:
-Ensure `C:\msys64\mingw64\bin` is in your PATH to access required MinGW DLLs.
+### Troubleshooting
 
 **Test container startup failures**:
 
@@ -452,56 +326,19 @@ Ensure `C:\msys64\mingw64\bin` is in your PATH to access required MinGW DLLs.
 # Verify Docker is running
 docker ps
 
-# Pull PostgreSQL image manually
+# Pull the PostgreSQL image manually
 docker pull postgres:16-alpine
 ```
 
 ## VS Code Integration
 
-This project includes complete VS Code configuration for CGO development.
+The repository ships `.vscode` configuration covering common workflows:
 
-### Features
+- **settings.json** — gopls environment and Go test defaults
+- **launch.json** — debug configurations: launch the CLI, debug the package or file under the cursor, and run the integration test suite (5-minute timeout)
+- **tasks.json** — build (default: `Ctrl+Shift+B`), test, coverage, lint, format, and `go mod tidy` tasks
 
-- ✅ **Automatic CGO Environment** - No manual env var setup required
-- ✅ **IntelliSense Support** - Full code completion for CGO code
-- ✅ **Debug Configurations** - F5 to debug, with 5 pre-configured scenarios
-- ✅ **Build Tasks** - Ctrl+Shift+B to build, plus 9 other tasks
-- ✅ **Integrated Terminal** - CGO variables automatically set
-- ✅ **Cross-Platform** - Windows, Linux, and macOS configurations
-
-### Quick Start
-
-1. **Open workspace in VS Code**
-
-   ```bash
-   code .
-   ```
-
-2. **Reload window** (if already open)
-   - Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS)
-   - Type "Reload Window"
-   - Press Enter
-
-3. **Verify gopls is working**
-   - Check bottom-right status bar
-   - Should show "gopls" without errors
-
-4. **Build the project**
-   - Press `Ctrl+Shift+B` (or `Cmd+Shift+B` on macOS)
-   - Or: Terminal → Run Build Task
-
-5. **Debug the project**
-   - Open Run and Debug sidebar (`Ctrl+Shift+D`)
-   - Select "Launch pgcov"
-   - Press `F5`
-
-### Configuration Files
-
-See [.vscode/README.md](.vscode/README.md) for detailed documentation:
-
-- **settings.json** - CGO environment for Go tools and terminal
-- **launch.json** - Debug configurations
-- **tasks.json** - Build and test tasks
+See [.vscode/README.md](.vscode/README.md) for details.
 
 ## License
 
@@ -509,11 +346,10 @@ MIT
 
 ## Contributing
 
-Contributions welcome! Please open an issue or pull request.
+Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and open an issue or pull request.
 
 ## Support
 
-- **Documentation**: [Full docs](https://github.com/cybertec-postgresql/pgcov/docs)
+- **Documentation**: [`docs/`](./docs) — [quickstart](./docs/quickstart.md), [CLI contract](./docs/cli-contract.md)
 - **Issues**: [GitHub Issues](https://github.com/cybertec-postgresql/pgcov/issues)
 - **Examples**: [Examples directory](./examples)
-
