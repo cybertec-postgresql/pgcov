@@ -16,6 +16,7 @@ import (
 type Executor struct {
 	pool            *database.Pool
 	timeout         time.Duration
+	signalTimeout   time.Duration
 	verbose         bool
 	coverageChannel string
 
@@ -32,13 +33,24 @@ type SetupScript struct {
 	SQL  string
 }
 
+// DefaultSignalTimeout is the grace period for in-flight NOTIFY signals used
+// when NewExecutor receives a non-positive signalTimeout (e.g. a Config built
+// without the CLI defaults).
+const DefaultSignalTimeout = 100 * time.Millisecond
+
 // NewExecutor creates a new test executor.  coverageChannel is the PostgreSQL
 // NOTIFY channel name used both for the instrumented sources (pg_notify calls)
 // and for the LISTEN side; both must agree or no signals will be received.
-func NewExecutor(pool *database.Pool, timeout time.Duration, verbose bool, coverageChannel string) *Executor {
+// signalTimeout is the grace period for in-flight NOTIFY signals after test SQL
+// finishes executing; a non-positive value falls back to DefaultSignalTimeout.
+func NewExecutor(pool *database.Pool, timeout time.Duration, signalTimeout time.Duration, verbose bool, coverageChannel string) *Executor {
+	if signalTimeout <= 0 {
+		signalTimeout = DefaultSignalTimeout
+	}
 	return &Executor{
 		pool:            pool,
 		timeout:         timeout,
+		signalTimeout:   signalTimeout,
 		verbose:         verbose,
 		coverageChannel: coverageChannel,
 	}
@@ -297,9 +309,8 @@ func (e *Executor) executeTestWorkflow(ctx context.Context, testRun *TestRun, so
 	if e.verbose {
 		fmt.Println("[DEBUG] Step 7: Collecting coverage signals...")
 	}
-	// Step 6: Collect coverage signals
 	// Give a short time for any remaining signals to arrive
-	signals, err := listener.CollectSignals(ctx, 100*time.Millisecond)
+	signals, err := listener.CollectSignals(ctx, e.signalTimeout)
 	if err != nil && err != context.DeadlineExceeded && err != context.Canceled {
 		return fmt.Errorf("failed to collect signals: %w", err)
 	}

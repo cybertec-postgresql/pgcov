@@ -31,6 +31,10 @@ func main() {
 						Name:  "timeout",
 						Usage: "Per-test timeout",
 					},
+					&urfavecli.DurationFlag{
+						Name:  "signal-timeout",
+						Usage: "Grace period to wait for in-flight coverage NOTIFY signals after test SQL executes",
+					},
 					&urfavecli.IntFlag{
 						Name:  "parallel",
 						Usage: "Maximum concurrent tests (1 = sequential)",
@@ -85,16 +89,15 @@ func main() {
 func runCommand(ctx context.Context, cmd *urfavecli.Command) error {
 	// Load configuration
 	config := &cli.DefaultConfig
-
-	// Apply flags
 	connection := cmd.String("connection")
 	timeout := cmd.Duration("timeout")
+	signalTimeout := cmd.Duration("signal-timeout")
 	parallel := cmd.Int("parallel")
 	coverageFile := cmd.String("coverage-file")
 	setupFiles := cmd.StringSlice("setup")
 	verbose := cmd.Bool("verbose")
 
-	cli.ApplyFlagsToConfig(config, connection, timeout, parallel, coverageFile, verbose, setupFiles)
+	cli.ApplyFlagsToConfig(config, connection, timeout, signalTimeout, parallel, coverageFile, verbose, setupFiles)
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {

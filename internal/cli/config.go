@@ -16,6 +16,7 @@ type ConfigError = types.ConfigError
 var DefaultConfig = Config{
 	ConnectionString: "",
 	Timeout:          30 * time.Second,
+	SignalTimeout:    100 * time.Millisecond,
 	Parallelism:      1,
 	CoverageFile:     ".pgcov/coverage.json",
 	Verbose:          false,
@@ -23,13 +24,15 @@ var DefaultConfig = Config{
 
 // ApplyFlagsToConfig applies command-line flag values to configuration
 func ApplyFlagsToConfig(c *Config, connection string, timeout time.Duration,
-	parallel int, coverageFile string, verbose bool, setupFiles []string) {
-
+	signalTimeout time.Duration, parallel int, coverageFile string, verbose bool, setupFiles []string) {
 	if connection != "" {
 		c.ConnectionString = connection
 	}
 	if timeout != 0 {
 		c.Timeout = timeout
+	}
+	if signalTimeout != 0 {
+		c.SignalTimeout = signalTimeout
 	}
 	if parallel != 0 {
 		c.Parallelism = parallel
