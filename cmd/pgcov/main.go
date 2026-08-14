@@ -80,6 +80,19 @@ func main() {
 					},
 				},
 			},
+			{
+				Name:   "merge",
+				Usage:  "Merge two or more coverage JSON files (positional args). Per-position hit counts are summed across inputs.",
+				Action: mergeCommand,
+				Flags: []urfavecli.Flag{
+					&urfavecli.StringFlag{
+						Name:    "output",
+						Aliases: []string{"o"},
+						Usage:   "Output file path (use - for stdout)",
+						Value:   "-",
+					},
+				},
+			},
 		},
 	}
 
@@ -137,4 +150,11 @@ func reportCommand(ctx context.Context, cmd *urfavecli.Command) error {
 	coverageFile := cmd.String("coverage-file")
 
 	return cli.Report(ctx, coverageFile, format, output)
+}
+
+// mergeCommand handles the 'pgcov merge' command
+func mergeCommand(ctx context.Context, cmd *urfavecli.Command) error {
+	output := cmd.String("output")
+	inputs := cmd.Args().Slice()
+	return cli.Merge(ctx, inputs, output)
 }

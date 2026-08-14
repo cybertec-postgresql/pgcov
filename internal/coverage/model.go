@@ -97,6 +97,33 @@ func (c *Coverage) GetFiles() []string {
 	return files
 }
 
+// Merge combines multiple Coverage objects into a single Coverage by summing
+// per-position hit counts for each file. The result's Version mirrors
+// NewCoverage's "1.0" schema identifier and Timestamp is set to the current
+// time. Input coverages are not mutated; the returned Coverage owns its
+// position maps. Nil entries are skipped; an all-nil or empty input returns a
+// freshly initialized Coverage with no positions.
+func Merge(coverages ...*Coverage) *Coverage {
+	result := NewCoverage()
+	for _, c := range coverages {
+		if c == nil {
+			continue
+		}
+		for file, posHits := range c.Positions {
+			if posHits == nil {
+				continue
+			}
+			if result.Positions[file] == nil {
+				result.Positions[file] = make(PositionHits)
+			}
+			for posKey, hits := range posHits {
+				result.Positions[file][posKey] += hits
+			}
+		}
+	}
+	return result
+}
+
 // Clone returns a deep copy of the Coverage struct
 func (c *Coverage) Clone() *Coverage {
 	clone := &Coverage{
