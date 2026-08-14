@@ -51,6 +51,10 @@ func main() {
 						Name:  "verbose",
 						Usage: "Enable debug output",
 					},
+					&urfavecli.Float64Flag{
+						Name:  "fail-under",
+						Usage: "Fail (exit 1) if total coverage percentage is below this threshold (0 = disabled)",
+					},
 				},
 			},
 			{
@@ -96,8 +100,9 @@ func runCommand(ctx context.Context, cmd *urfavecli.Command) error {
 	coverageFile := cmd.String("coverage-file")
 	setupFiles := cmd.StringSlice("setup")
 	verbose := cmd.Bool("verbose")
+	failUnder := cmd.Float64("fail-under")
 
-	cli.ApplyFlagsToConfig(config, connection, timeout, signalTimeout, parallel, coverageFile, verbose, setupFiles)
+	cli.ApplyFlagsToConfig(config, connection, timeout, signalTimeout, parallel, coverageFile, verbose, setupFiles, failUnder)
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {

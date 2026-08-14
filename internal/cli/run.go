@@ -210,9 +210,14 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	fmt.Printf("Coverage: %.2f%%\n", coveragePercent)
 	fmt.Printf("Time:     %v\n", time.Since(startTime).Round(time.Millisecond))
 	fmt.Printf("\n")
-
 	fmt.Printf("Coverage data written to %s\n", config.CoverageFile)
 
-	// Return appropriate exit code
-	return summary.ExitCode(), nil
+	// Determine exit code: test failures take precedence; otherwise check threshold.
+	exitCode := summary.ExitCode()
+	if exitCode == 0 && config.FailUnder > 0 && coveragePercent < config.FailUnder {
+		fmt.Printf("Coverage %.2f%% is below threshold %.2f%%\n", coveragePercent, config.FailUnder)
+		return 1, nil
+	}
+
+	return exitCode, nil
 }
