@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -55,12 +57,36 @@ func loadSetupScripts(patterns []string) ([]runner.SetupScript, error) {
 	return scripts, nil
 }
 
+// generateCoverageChannel returns a per-run unique NOTIFY channel name.  The
+// returned string uses only identifier-safe characters (lowercase letters,
+// digits, underscore) so it can be safely interpolated into LISTEN/<channel>
+// and pg_notify('<channel>', ...) SQL without escaping.
+func generateCoverageChannel() (string, error) {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("failed to read random bytes for coverage channel: %w", err)
+	}
+	return "pgcov_" + hex.EncodeToString(b[:]), nil
+}
+
 // Run executes the test runner workflow
 func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	startTime := time.Now()
 
+	// Generate a per-run unique NOTIFY channel when the caller did not
+	// supply one.  This avoids collisions with user code that NOTIFYs on
+	// the well-known "pgcov" name inside the temp database.
+	if config.CoverageChannel == "" {
+		ch, err := generateCoverageChannel()
+		if err != nil {
+			return 1, err
+		}
+		config.CoverageChannel = ch
+	}
+
 	if config.Verbose {
 		fmt.Printf("pgcov: discovering tests in %s\n", searchPath)
+		fmt.Printf("pgcov: NOTIFY channel = %s\n", config.CoverageChannel)
 	}
 
 	// Step 1: Discover test files
@@ -99,7 +125,7 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	}
 
 	// Step 4: Instrument source files
-	instrumentedSources, err := instrument.GenerateCoverageInstruments(parsedSources)
+	instrumentedSources, err := instrument.GenerateCoverageInstruments(parsedSources, config.CoverageChannel)
 	if err != nil {
 		return 1, fmt.Errorf("failed to instrument sources: %w", err)
 	}
@@ -116,7 +142,7 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	}
 
 	// Step 6: Execute tests (parallel or sequential based on config)
-	executor := runner.NewExecutor(pool, config.Timeout, config.Verbose)
+	executor := runner.NewExecutor(pool, config.Timeout, config.Verbose, config.CoverageChannel)
 
 	// Load any prerequisite setup scripts (globs expanded, order preserved) so
 	// they run in each test's temp database before the instrumented sources.

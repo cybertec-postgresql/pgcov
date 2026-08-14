@@ -26,6 +26,15 @@ type Config struct {
 	// Output
 	CoverageFile string // Coverage data output path
 	Verbose      bool   // Enable debug logging
+
+	// CoverageChannel is the PostgreSQL NOTIFY channel name used for coverage
+	// signals.  When empty, the CLI generates a per-run unique channel
+	// ("pgcov_<8 hex chars>") so coverage NOTIFY traffic inside the temp
+	// database cannot collide with user code NOTIFYing on a well-known name.
+	// Channel names are restricted to an identifier-safe charset (lowercase
+	// letters, digits, underscore) so they can be safely interpolated into
+	// LISTEN/<channel> SQL without escaping.
+	CoverageChannel string
 }
 
 // ConfigError represents a configuration validation error
