@@ -36,6 +36,10 @@ type Config struct {
 	// letters, digits, underscore) so they can be safely interpolated into
 	// LISTEN/<channel> SQL without escaping.
 	CoverageChannel string
+
+	// FailUnder is the minimum total coverage percentage required to exit 0
+	// (0 = disabled).
+	FailUnder float64
 }
 
 // ConfigError represents a configuration validation error
@@ -103,6 +107,16 @@ func (c *Config) Validate() error {
 			Field:      "coverage-file",
 			Message:    "coverage file path is required",
 			Suggestion: "Set via --coverage-file flag. Default is '.pgcov/coverage.json'.",
+		}
+	}
+
+	// Validate fail-under threshold (0 disables, otherwise must be 0-100)
+	if c.FailUnder < 0 || c.FailUnder > 100 {
+		return &ConfigError{
+			Field:      "fail-under",
+			Value:      c.FailUnder,
+			Message:    fmt.Sprintf("fail-under must be between 0 and 100, got: %g", c.FailUnder),
+			Suggestion: "Use --fail-under=N where N is a percentage in [0, 100]. Use 0 to disable the threshold.",
 		}
 	}
 

@@ -17,7 +17,7 @@ func TestApplyFlagsToConfig_EmptyFlagsPreserveConfig(t *testing.T) {
 	}
 
 	// Apply empty flags (should not change config)
-	ApplyFlagsToConfig(cfg, "", 0, 0, 0, "", false, nil)
+	ApplyFlagsToConfig(cfg, "", 0, 0, 0, "", false, nil, 0)
 
 	if cfg.ConnectionString != originalConnString {
 		t.Errorf("empty flag should not change connection string")
@@ -38,7 +38,7 @@ func TestApplyFlagsToConfig_EmptyFlagsPreserveConfig(t *testing.T) {
 
 func TestApplyFlagsToConfig_SetupFiles(t *testing.T) {
 	cfg := &Config{}
-	ApplyFlagsToConfig(cfg, "", 0, 0, 0, "", false, []string{"a.sql", "glob/*.sql"})
+	ApplyFlagsToConfig(cfg, "", 0, 0, 0, "", false, []string{"a.sql", "glob/*.sql"}, 0)
 	if len(cfg.SetupFiles) != 2 {
 		t.Fatalf("expected 2 setup files, got %d", len(cfg.SetupFiles))
 	}
@@ -46,7 +46,7 @@ func TestApplyFlagsToConfig_SetupFiles(t *testing.T) {
 
 func TestApplyFlagsToConfig_SignalTimeout(t *testing.T) {
 	cfg := &Config{SignalTimeout: 100 * time.Millisecond}
-	ApplyFlagsToConfig(cfg, "", 0, 500*time.Millisecond, 0, "", false, nil)
+	ApplyFlagsToConfig(cfg, "", 0, 500*time.Millisecond, 0, "", false, nil, 0)
 	if cfg.SignalTimeout != 500*time.Millisecond {
 		t.Fatalf("expected signal timeout 500ms, got %v", cfg.SignalTimeout)
 	}
@@ -54,7 +54,7 @@ func TestApplyFlagsToConfig_SignalTimeout(t *testing.T) {
 
 func TestApplyFlagsToConfig_SignalTimeoutZeroPreservesDefault(t *testing.T) {
 	cfg := &Config{SignalTimeout: 250 * time.Millisecond}
-	ApplyFlagsToConfig(cfg, "", 0, 0, 0, "", false, nil)
+	ApplyFlagsToConfig(cfg, "", 0, 0, 0, "", false, nil, 0)
 	if cfg.SignalTimeout != 250*time.Millisecond {
 		t.Fatalf("zero flag must preserve signal timeout, got %v", cfg.SignalTimeout)
 	}
@@ -174,6 +174,50 @@ func TestConfigValidate_EmptyCoverageFile(t *testing.T) {
 	}
 	if configErr.Suggestion == "" {
 		t.Error("expected suggestion to be provided")
+	}
+}
+
+func TestConfigValidate_FailUnder(t *testing.T) {
+	tests := []struct {
+		name      string
+		failUnder float64
+		wantErr   bool
+	}{
+		{"zero disables", 0, false},
+		{"valid boundary zero", 0.0, false},
+		{"valid mid", 80.5, false},
+		{"valid boundary hundred", 100, false},
+		{"negative invalid", -1, true},
+		{"too high invalid", 100.01, true},
+		{"way too high invalid", 250, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				ConnectionString: "host=localhost port=5432 dbname=postgres",
+				Timeout:          30 * time.Second,
+				Parallelism:      1,
+				CoverageFile:     ".pgcov/coverage.json",
+				FailUnder:        tt.failUnder,
+			}
+
+			err := cfg.Validate()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected validation error for fail-under=%g", tt.failUnder)
+				}
+				configErr, ok := err.(*ConfigError)
+				if !ok {
+					t.Fatalf("expected ConfigError, got %T", err)
+				}
+				if configErr.Field != "fail-under" {
+					t.Errorf("expected field 'fail-under', got %q", configErr.Field)
+				}
+			} else if err != nil {
+				t.Errorf("unexpected error for fail-under=%g: %v", tt.failUnder, err)
+			}
+		})
 	}
 }
 

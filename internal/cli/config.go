@@ -24,7 +24,7 @@ var DefaultConfig = Config{
 
 // ApplyFlagsToConfig applies command-line flag values to configuration
 func ApplyFlagsToConfig(c *Config, connection string, timeout time.Duration,
-	signalTimeout time.Duration, parallel int, coverageFile string, verbose bool, setupFiles []string) {
+	signalTimeout time.Duration, parallel int, coverageFile string, verbose bool, setupFiles []string, failUnder float64) {
 	if connection != "" {
 		c.ConnectionString = connection
 	}
@@ -44,4 +44,5 @@ func ApplyFlagsToConfig(c *Config, connection string, timeout time.Duration,
 		c.SetupFiles = setupFiles
 	}
 	c.Verbose = verbose
+	c.FailUnder = failUnder
 }
