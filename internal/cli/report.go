@@ -9,8 +9,13 @@ import (
 	"github.com/cybertec-postgresql/pgcov/internal/report"
 )
 
-// Report generates a coverage report from saved coverage data
-func Report(_ context.Context, coverageFile string, format string, outputPath string) error {
+// Report generates a coverage report from saved coverage data.
+// baseDir, when non-empty, is forwarded to the formatter so relative source
+// paths are resolved against it instead of the process CWD. This lets
+// `pgcov report` find sources when invoked from a directory other than the
+// one `pgcov run` was executed from.
+func Report(_ context.Context, coverageFile string, format string, outputPath string, baseDir string) error {
+
 	// Step 1: Load coverage data
 	store := coverage.NewStore(coverageFile)
 	if !store.Exists() {
@@ -32,6 +37,16 @@ func Report(_ context.Context, coverageFile string, format string, outputPath st
 	if err != nil {
 		return err
 	}
+
+	// Step 3a: Forward baseDir to formatters that support source-resolution.
+	// The JSON reporter embeds no source and ignores BaseDir, so the
+	// type-assertion fall-through is intentional.
+	if baseDir != "" {
+		if bd, ok := formatter.(interface{ SetBaseDir(string) }); ok {
+			bd.SetBaseDir(baseDir)
+		}
+	}
+
 
 	// Step 4: Format and output
 	var writer *os.File

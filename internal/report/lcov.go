@@ -12,11 +12,23 @@ import (
 
 // LCOVReporter formats coverage data in LCOV format
 // LCOV format specification: https://github.com/linux-test-project/lcov
-type LCOVReporter struct{}
+type LCOVReporter struct {
+	// BaseDir, when non-empty, is the directory relative source paths are
+	// resolved against before falling back to the process CWD. See
+	// HTMLReporter.BaseDir for the same mechanism.
+	BaseDir string
+}
 
 // NewLCOVReporter creates a new LCOV reporter
 func NewLCOVReporter() *LCOVReporter {
 	return &LCOVReporter{}
+}
+
+// SetBaseDir configures the base directory used to resolve relative source
+// paths when reading files from disk. Passing an empty string clears it and
+// falls back to the process CWD.
+func (r *LCOVReporter) SetBaseDir(dir string) {
+	r.BaseDir = dir
 }
 
 // Format formats coverage data as LCOV and writes to the writer
@@ -178,19 +190,42 @@ func (r *LCOVReporter) formatPositionsAsLines(posHits coverage.PositionHits, wri
 	return nil
 }
 
-// readSourceFile reads a source file and returns its content as string
+// readSourceFile reads a source file and returns its content as string.
+// When BaseDir is set on the reporter, relative source paths are resolved
+// against BaseDir first, then the process CWD. Absolute paths are tried as-is
+// before falling back to CWD-relative resolution.
 func (r *LCOVReporter) readSourceFile(filePath string) (string, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		// Try with current working directory
-		cwd, _ := os.Getwd()
-		altPath := filepath.Join(cwd, filePath)
-		data, err = os.ReadFile(altPath)
-		if err != nil {
-			return "", fmt.Errorf("cannot open file: %w", err)
+	candidates := r.sourcePathCandidates(filePath)
+	var lastErr error
+	for _, p := range candidates {
+		data, err := os.ReadFile(p)
+		if err == nil {
+			return string(data), nil
 		}
+		lastErr = err
 	}
-	return string(data), nil
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no candidates generated")
+	}
+	return "", fmt.Errorf("cannot open file: %w", lastErr)
+}
+
+// sourcePathCandidates returns the ordered list of paths to try when reading a
+// source file. Absolute paths skip base-dir resolution.
+func (r *LCOVReporter) sourcePathCandidates(filePath string) []string {
+	if filepath.IsAbs(filePath) {
+		return []string{filePath}
+	}
+	var out []string
+	if r.BaseDir != "" {
+		out = append(out, filepath.Join(r.BaseDir, filePath))
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		out = append(out, filepath.Join(cwd, filePath))
+	} else {
+		out = append(out, filePath)
+	}
+	return out
 }
 
 // FormatString returns coverage data as an LCOV-formatted string

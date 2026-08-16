@@ -2,6 +2,7 @@ package report
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -423,5 +424,85 @@ func TestHTMLReporter_Footer(t *testing.T) {
 
 	if !strings.Contains(output, "</html>") {
 		t.Error("Missing closing html tag")
+	}
+}
+
+func TestHTMLReporter_BaseDir(t *testing.T) {
+	// Source lives in baseDir/sql/sample.sql. Coverage positions reference it
+	// by the relative path that `pgcov run` would have used. We run the
+	// reporter from a different CWD and rely on BaseDir to find the file.
+	baseDir := t.TempDir()
+	srcDir := baseDir + "/sql"
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	srcPath := "sql/sample.sql"
+	srcContent := "SELECT 1;\nSELECT 2;\nSELECT 3;\n"
+	if err := os.WriteFile(baseDir+"/"+srcPath, []byte(srcContent), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	cov := &coverage.Coverage{
+		Version:   "1.0",
+		Timestamp: time.Now(),
+		Positions: map[string]coverage.PositionHits{
+			srcPath: {
+				"0:10":  2,
+				"10:10": 1,
+				"20:10": 0,
+			},
+		},
+	}
+
+	// Run reporter from a different CWD so CWD-relative resolution fails.
+	otherCwd := t.TempDir()
+	prevCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(otherCwd); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prevCwd) })
+
+	// Without BaseDir the source cannot be located, and the error message
+	// is rendered instead of the source body.
+	noBase := NewHTMLReporter()
+	outNoBase, err := noBase.FormatString(cov)
+	if err != nil {
+		t.Fatalf("FormatString without BaseDir: %v", err)
+	}
+	if strings.Contains(outNoBase, "SELECT 1;") {
+		t.Fatal("expected source NOT to be resolved without BaseDir (wrong CWD)")
+	}
+	if !strings.Contains(outNoBase, "Error reading source file") {
+		t.Error("expected error message in HTML when source cannot be resolved")
+	}
+
+	// With BaseDir the relative source path resolves and the file body
+	// appears in the rendered HTML.
+	withBase := NewHTMLReporter()
+	withBase.SetBaseDir(baseDir)
+	out, err := withBase.FormatString(cov)
+	if err != nil {
+		t.Fatalf("FormatString with BaseDir: %v", err)
+	}
+	for _, want := range []string{"SELECT 1;", "SELECT 2;", "SELECT 3;"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected rendered HTML to contain %q from %s", want, srcPath)
+		}
+	}
+	if strings.Contains(out, "Error reading source file") {
+		t.Error("expected no error message when BaseDir is set")
+	}
+
+	// SetBaseDir("") returns to CWD-only behaviour.
+	withBase.SetBaseDir("")
+	outCleared, err := withBase.FormatString(cov)
+	if err != nil {
+		t.Fatalf("FormatString after clearing BaseDir: %v", err)
+	}
+	if strings.Contains(outCleared, "SELECT 1;") {
+		t.Error("expected CWD-only mode to fail after clearing BaseDir (wrong CWD)")
 	}
 }

@@ -78,6 +78,10 @@ func main() {
 						Usage: "Coverage data input path",
 						Value: ".pgcov/coverage.json",
 					},
+					&urfavecli.StringFlag{
+						Name:  "base-dir",
+						Usage: "Base directory used to resolve relative source paths in coverage data (default: current working directory)",
+					},
 				},
 			},
 			{
@@ -148,8 +152,9 @@ func reportCommand(ctx context.Context, cmd *urfavecli.Command) error {
 	format := cmd.String("format")
 	output := cmd.String("output")
 	coverageFile := cmd.String("coverage-file")
+	baseDir := cmd.String("base-dir")
 
-	return cli.Report(ctx, coverageFile, format, output)
+	return cli.Report(ctx, coverageFile, format, output, baseDir)
 }
 
 // mergeCommand handles the 'pgcov merge' command
