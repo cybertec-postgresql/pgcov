@@ -145,6 +145,22 @@ pgcov run . --connection "..." \
 
 Glob matches are sorted for determinism, the flag is repeatable, and pattern order is preserved. A pattern that matches nothing is an error.
 
+### Source deployment order
+
+Within a single directory, source files are deployed in **lexical filename order**, because pgcov walks the tree with Go's `filepath.Walk` (which sorts entries lexicographically inside each directory). There is no `pgcov.toml` manifest or per-file ordering annotation — the filename is the only lever you control.
+
+When sources have interdependencies, prefix the filenames with two-digit numbers so they sort the way you want:
+
+```
+auth/
+├── 01_schema.sql         # Tables, types — must load first
+├── 02_functions.sql      # Functions depend on tables from 01
+├── 03_views.sql          # Views depend on functions from 02
+└── auth_test.sql         # Test (excluded from the lexical sort pattern)
+```
+
+Sources are loaded in that order for every test in the directory. If a prerequisite lives **outside** the test directory (shared/global schema), load it verbatim with the repeatable `--setup` flag — setup runs before the instrumented sources and is not counted as covered source.
+
 ### Exit Codes
 
 | Code | Meaning |
