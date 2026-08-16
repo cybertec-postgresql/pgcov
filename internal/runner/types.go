@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/cybertec-postgresql/pgcov/internal/discovery"
@@ -80,4 +81,24 @@ func (s *TestSummary) ExitCode() int {
 		return 0
 	}
 	return 1
+}
+
+// FormatFailedTests renders one human-readable line per failed test run,
+// prefixed with "FAILED ". Runs that are not TestFailed (or have no Error)
+// are skipped. The returned slice is nil when there is nothing to report,
+// so callers can print it directly with no extra guarding. Output is built
+// (not printed) here so it stays unit-testable without a live database.
+func FormatFailedTests(runs []*TestRun) []string {
+	var lines []string
+	for _, run := range runs {
+		if run == nil || run.Status != TestFailed || run.Error == nil {
+			continue
+		}
+		relPath := ""
+		if run.Test != nil {
+			relPath = run.Test.RelativePath
+		}
+		lines = append(lines, fmt.Sprintf("FAILED %s: %v", relPath, run.Error))
+	}
+	return lines
 }

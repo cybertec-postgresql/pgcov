@@ -198,12 +198,19 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	summary := runner.SummarizeRuns(testRuns)
 	coveragePercent := collector.TotalCoveragePercent()
 
+	// Surface per-test failure messages so users do not have to re-run with
+	// --verbose to see why a test failed. Each line is prefixed with "FAILED "
+	// to match the run-level status badge printed earlier in --verbose mode.
+	for _, line := range runner.FormatFailedTests(testRuns) {
+		fmt.Println(line)
+	}
 	fmt.Printf("\n")
 	fmt.Printf("Tests:    %d passed, %d failed, %d total\n",
 		summary.PassedTests, summary.FailedTests, summary.TotalTests)
 	fmt.Printf("Coverage: %.2f%%\n", coveragePercent)
 	fmt.Printf("Time:     %v\n", time.Since(startTime).Round(time.Millisecond))
 	fmt.Printf("\n")
+
 	fmt.Printf("Coverage data written to %s\n", config.CoverageFile)
 
 	// Return appropriate exit code
