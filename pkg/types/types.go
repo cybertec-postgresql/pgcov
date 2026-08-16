@@ -11,9 +11,10 @@ type Config struct {
 	ConnectionString string // PostgreSQL connection string (URI or key=value format)
 
 	// Execution
-	SearchPath  string        // Root path for test/source discovery
-	Timeout     time.Duration // Per-test timeout
-	Parallelism int           // Max concurrent tests (1 = sequential)
+	SearchPath    string        // Root path for test/source discovery
+	Timeout       time.Duration // Per-test timeout
+	SignalTimeout time.Duration // Grace period to wait for in-flight coverage NOTIFY signals after test SQL executes
+	Parallelism   int           // Max concurrent tests (1 = sequential)
 
 	// SetupFiles are SQL files (globs allowed) executed verbatim — without
 	// instrumentation and without being treated as sources-under-test — in each

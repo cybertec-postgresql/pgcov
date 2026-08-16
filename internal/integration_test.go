@@ -409,7 +409,7 @@ func TestOrderIndependence(t *testing.T) {
 	runTestsInOrder := func(order []discovery.DiscoveredFile, label string) *coverage.Coverage {
 		t.Logf("Running tests in order %s", label)
 
-		executor := runner.NewExecutor(pool, config.Timeout, config.Verbose, instrument.DefaultChannel)
+		executor := runner.NewExecutor(pool, config.Timeout, config.SignalTimeout, config.Verbose, instrument.DefaultChannel)
 		testRuns, err := executor.ExecuteBatch(ctx, order, instrumentedSources)
 		if err != nil {
 			t.Fatalf("Test execution failed for %s: %v", label, err)
@@ -599,7 +599,7 @@ func TestTestIndependence(t *testing.T) {
 	runSingleTest := func(iteration int) (*runner.TestRun, *coverage.Coverage) {
 		t.Logf("Running test iteration %d...", iteration)
 
-		executor := runner.NewExecutor(pool, config.Timeout, config.Verbose, instrument.DefaultChannel)
+		executor := runner.NewExecutor(pool, config.Timeout, config.SignalTimeout, config.Verbose, instrument.DefaultChannel)
 		testRuns, err := executor.ExecuteBatch(ctx, []discovery.DiscoveredFile{testFile}, instrumentedSources)
 		if err != nil {
 			t.Fatalf("Test execution failed (iteration %d): %v", iteration, err)

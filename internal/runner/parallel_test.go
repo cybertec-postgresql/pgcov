@@ -69,7 +69,7 @@ func TestParallelExecution(t *testing.T) {
 	}
 
 	// Execute tests in parallel
-	executor := runner.NewExecutor(pool, config.Timeout, config.Verbose, instrument.DefaultChannel)
+	executor := runner.NewExecutor(pool, config.Timeout, config.SignalTimeout, config.Verbose, instrument.DefaultChannel)
 	workerPool := runner.NewWorkerPool(executor, config.Parallelism, config.Verbose)
 
 	startTime := time.Now()
@@ -93,7 +93,7 @@ func TestParallelExecution(t *testing.T) {
 	}
 
 	// Execute tests sequentially for comparison
-	executor2 := runner.NewExecutor(pool, config.Timeout, config.Verbose, instrument.DefaultChannel)
+	executor2 := runner.NewExecutor(pool, config.Timeout, config.SignalTimeout, config.Verbose, instrument.DefaultChannel)
 	startTime = time.Now()
 	testRuns2, err := executor2.ExecuteBatch(ctx, testFiles, instrumentedSources)
 	sequentialDuration := time.Since(startTime)
@@ -193,7 +193,7 @@ func TestParallelExecutionAccuracy(t *testing.T) {
 	var coveragePercentages []float64
 
 	for i := range runs {
-		executor := runner.NewExecutor(pool, config.Timeout, config.Verbose, instrument.DefaultChannel)
+		executor := runner.NewExecutor(pool, config.Timeout, config.SignalTimeout, config.Verbose, instrument.DefaultChannel)
 		workerPool := runner.NewWorkerPool(executor, config.Parallelism, config.Verbose)
 		testRuns, err := workerPool.ExecuteParallel(ctx, testFiles, instrumentedSources)
 		if err != nil {

@@ -142,7 +142,7 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	}
 
 	// Step 6: Execute tests (parallel or sequential based on config)
-	executor := runner.NewExecutor(pool, config.Timeout, config.Verbose, config.CoverageChannel)
+	executor := runner.NewExecutor(pool, config.Timeout, config.SignalTimeout, config.Verbose, config.CoverageChannel)
 
 	// Load any prerequisite setup scripts (globs expanded, order preserved) so
 	// they run in each test's temp database before the instrumented sources.

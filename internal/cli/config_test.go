@@ -10,13 +10,14 @@ func TestApplyFlagsToConfig_EmptyFlagsPreserveConfig(t *testing.T) {
 	cfg := &Config{
 		ConnectionString: originalConnString,
 		Timeout:          45 * time.Second,
+		SignalTimeout:    250 * time.Millisecond,
 		Parallelism:      2,
 		CoverageFile:     "original.json",
 		Verbose:          false,
 	}
 
 	// Apply empty flags (should not change config)
-	ApplyFlagsToConfig(cfg, "", 0, 0, "", false, nil)
+	ApplyFlagsToConfig(cfg, "", 0, 0, 0, "", false, nil)
 
 	if cfg.ConnectionString != originalConnString {
 		t.Errorf("empty flag should not change connection string")
@@ -30,13 +31,32 @@ func TestApplyFlagsToConfig_EmptyFlagsPreserveConfig(t *testing.T) {
 	if len(cfg.SetupFiles) != 0 {
 		t.Errorf("nil setup flag should not set setup files")
 	}
+	if cfg.SignalTimeout != 250*time.Millisecond {
+		t.Errorf("zero flag should not change signal timeout")
+	}
 }
 
 func TestApplyFlagsToConfig_SetupFiles(t *testing.T) {
 	cfg := &Config{}
-	ApplyFlagsToConfig(cfg, "", 0, 0, "", false, []string{"a.sql", "glob/*.sql"})
+	ApplyFlagsToConfig(cfg, "", 0, 0, 0, "", false, []string{"a.sql", "glob/*.sql"})
 	if len(cfg.SetupFiles) != 2 {
 		t.Fatalf("expected 2 setup files, got %d", len(cfg.SetupFiles))
+	}
+}
+
+func TestApplyFlagsToConfig_SignalTimeout(t *testing.T) {
+	cfg := &Config{SignalTimeout: 100 * time.Millisecond}
+	ApplyFlagsToConfig(cfg, "", 0, 500*time.Millisecond, 0, "", false, nil)
+	if cfg.SignalTimeout != 500*time.Millisecond {
+		t.Fatalf("expected signal timeout 500ms, got %v", cfg.SignalTimeout)
+	}
+}
+
+func TestApplyFlagsToConfig_SignalTimeoutZeroPreservesDefault(t *testing.T) {
+	cfg := &Config{SignalTimeout: 250 * time.Millisecond}
+	ApplyFlagsToConfig(cfg, "", 0, 0, 0, "", false, nil)
+	if cfg.SignalTimeout != 250*time.Millisecond {
+		t.Fatalf("zero flag must preserve signal timeout, got %v", cfg.SignalTimeout)
 	}
 }
 
